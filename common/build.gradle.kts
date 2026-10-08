@@ -34,6 +34,7 @@ dependencies {
     testAnnotationProcessor(libs.lombok)
 
     implementation(libs.triumph.gui) { exclude("net.kyori") }
+    implementation(libs.universal.scheduler)
 }
 
 publishing {

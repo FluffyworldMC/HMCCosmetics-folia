@@ -31,6 +31,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.minimessage.MiniMessage;
+import com.github.Anon8281.universalScheduler.scheduling.tasks.MyScheduledTask;
 import org.bukkit.Bukkit;
 import org.bukkit.Color;
 import org.bukkit.entity.Player;
@@ -41,7 +42,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 public class Menu {
@@ -164,18 +165,19 @@ public class Menu {
 
         gui.setDefaultClickAction(event -> event.setCancelled(true));
 
-        AtomicInteger taskid = new AtomicInteger(-1);
+        AtomicReference<MyScheduledTask> task = new AtomicReference<>();
         gui.setOpenGuiAction(event -> {
             Runnable run = () -> {
-                if (gui.getInventory().getViewers().isEmpty() && taskid.get() != -1) {
-                    Bukkit.getScheduler().cancelTask(taskid.get());
+                MyScheduledTask current = task.get();
+                if (gui.getInventory().getViewers().isEmpty() && current != null) {
+                    current.cancel();
                 }
 
                 updateMenu(viewer, cosmeticHolder, gui);
             };
 
-            if (refreshRate != -1) {
-                taskid.set(Bukkit.getScheduler().scheduleSyncRepeatingTask(HMCCosmeticsPlugin.getInstance(), run, 0, refreshRate));
+            if (refreshRate > 0) {
+                task.set(HMCCosmeticsPlugin.getScheduler().runTaskTimer(viewer, run, 0, refreshRate));
             } else {
                 run.run();
             }
@@ -184,10 +186,11 @@ public class Menu {
         gui.setCloseGuiAction(event -> {
             if (cosmeticHolder instanceof CosmeticUser user) {
                 PlayerMenuCloseEvent closeEvent = new PlayerMenuCloseEvent(user, this, event.getReason());
-                Bukkit.getScheduler().runTask(HMCCosmeticsPlugin.getInstance(), () -> Bukkit.getPluginManager().callEvent(closeEvent));
+                HMCCosmeticsPlugin.getScheduler().runTask(viewer, () -> Bukkit.getPluginManager().callEvent(closeEvent));
             }
 
-            if (taskid.get() != -1) Bukkit.getScheduler().cancelTask(taskid.get());
+            MyScheduledTask current = task.get();
+            if (current != null) current.cancel();
         });
 
         Runnable openGuiTask = () -> {
@@ -198,7 +201,7 @@ public class Menu {
         // API
         if (cosmeticHolder instanceof CosmeticUser user) {
             PlayerMenuOpenEvent event = new PlayerMenuOpenEvent(user, this);
-            Bukkit.getScheduler().runTask(HMCCosmeticsPlugin.getInstance(), () -> {
+            HMCCosmeticsPlugin.getScheduler().runTask(viewer, () -> {
                 Bukkit.getPluginManager().callEvent(event);
                 if (!event.isCancelled()) {
                     openGuiTask.run();
@@ -207,7 +210,7 @@ public class Menu {
         }
         // Internal
         else {
-            Bukkit.getScheduler().runTask(HMCCosmeticsPlugin.getInstance(), openGuiTask);
+            HMCCosmeticsPlugin.getScheduler().runTask(viewer, openGuiTask);
         }
     }
 

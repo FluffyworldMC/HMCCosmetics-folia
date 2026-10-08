@@ -73,6 +73,7 @@ tasks {
     shadowJar {
         mergeServiceFiles()
         relocate("dev.triumphteam.gui", "com.hibiscusmc.hmccosmetics.shaded.gui")
+        relocate("com.github.Anon8281.universalScheduler", "com.hibiscusmc.hmccosmetics.universalScheduler")
         archiveFileName = "HMCCosmeticsRemapped-${project.version}.jar"
     }
 
@@ -85,6 +86,7 @@ bukkit {
     main = "com.hibiscusmc.hmccosmetics.HMCCosmeticsPlugin"
     version = "${project.version}"
     apiVersion = "1.20"
+    foliaSupported = true
     load = PluginLoadOrder.POSTWORLD
     authors = listOf("LoJoSho", "boy0000")
     depend = listOf("HibiscusCommons")

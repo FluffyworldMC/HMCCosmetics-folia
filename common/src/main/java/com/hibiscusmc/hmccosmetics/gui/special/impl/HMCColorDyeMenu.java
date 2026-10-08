@@ -11,7 +11,6 @@ import com.hibiscusmc.hmccosmetics.gui.special.DyeMenu;
 import me.lojosho.hibiscuscommons.hooks.Hooks;
 import me.lojosho.hibiscuscommons.nms.NMSHandlers;
 import me.lojosho.hibiscuscommons.util.AdventureUtils;
-import org.bukkit.Bukkit;
 import org.bukkit.Color;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -55,7 +54,7 @@ public class HMCColorDyeMenu implements DyeMenu {
     private void addCosmetic(@NotNull Player viewer, @NotNull CosmeticHolder cosmeticHolder, @NotNull Cosmetic cosmetic, @Nullable Color color) {
         cosmeticHolder.addCosmetic(cosmetic, color);
         viewer.setItemOnCursor(new ItemStack(Material.AIR));
-        Bukkit.getScheduler().runTaskLater(HMCCosmeticsPlugin.getInstance(), () -> {
+        HMCCosmeticsPlugin.getScheduler().runTaskLater(viewer, () -> {
             viewer.closeInventory();
             cosmeticHolder.updateCosmetic(cosmetic.getSlot());
         }, 2);

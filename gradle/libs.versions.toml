@@ -12,6 +12,7 @@ commons-io = { module = "commons-io:commons-io", version = "2.17.0" } # The vers
 
 hibiscuscommons = { module = "me.lojosho:HibiscusCommons", version = "0.9.3" }
 triumph-gui = { module = "dev.triumphteam:triumph-gui", version = "3.2.0-SNAPSHOT" }
+universal-scheduler = { module = "com.github.Anon8281:UniversalScheduler", version = "0.1.7" }
 
 betterhud-standard = { module = "io.github.toxicity188:BetterHud-standard-api", version.ref = "betterhud" }
 betterhud-bukkit = { module = "io.github.toxicity188:BetterHud-bukkit-api", version.ref = "betterhud" }

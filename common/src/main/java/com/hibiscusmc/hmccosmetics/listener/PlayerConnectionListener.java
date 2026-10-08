@@ -25,15 +25,13 @@ import java.util.UUID;
 public class PlayerConnectionListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerJoin(@NotNull PlayerJoinEvent event) {
-        if (DatabaseSettings.isEnabledDelay()) {
-            MessagesUtil.sendDebugMessages("Delay Enabled with " + DatabaseSettings.getDelayLength() + " ticks");
-            Bukkit.getScheduler().runTaskLater(
-                HMCCosmeticsPlugin.getInstance(),
-                () -> this.loadUserData(event.getPlayer()),
-                DatabaseSettings.getDelayLength()
-            );
+        Player player = event.getPlayer();
+        int delay = DatabaseSettings.getDelayLength();
+        if (DatabaseSettings.isEnabledDelay() && delay > 0) {
+            MessagesUtil.sendDebugMessages("Delay Enabled with " + delay + " ticks");
+            HMCCosmeticsPlugin.getScheduler().runTaskLater(player, () -> this.loadUserData(player), delay);
         } else {
-            this.loadUserData(event.getPlayer());
+            this.loadUserData(player);
         }
     }
 
@@ -46,7 +44,8 @@ public class PlayerConnectionListener implements Listener {
         if (preLoadEvent.isCancelled()) return;
 
         Database.get(playerId).thenAccept(userData -> {
-            Bukkit.getScheduler().runTask(HMCCosmeticsPlugin.getInstance(), () -> {
+            if (!player.isOnline()) return;
+            HMCCosmeticsPlugin.getScheduler().runTask(player, () -> {
                 CosmeticUser cosmeticUser = CosmeticUsers.getProvider()
                     .createCosmeticUser(playerId)
                     .initialize(userData);
@@ -59,7 +58,7 @@ public class PlayerConnectionListener implements Listener {
                 Bukkit.getPluginManager().callEvent(playerLoadEvent);
 
                 // And finally, launch an update for the cosmetics they have.
-                Bukkit.getScheduler().runTaskLater(HMCCosmeticsPlugin.getInstance(), () -> {
+                HMCCosmeticsPlugin.getScheduler().runTaskLater(player, () -> {
                     if (cosmeticUser.getPlayer() == null) return;
                     cosmeticUser.updateCosmetic();
                 }, 4);

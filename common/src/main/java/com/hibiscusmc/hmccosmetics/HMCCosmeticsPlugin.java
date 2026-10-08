@@ -41,12 +41,15 @@ import me.lojosho.shaded.configurate.ConfigurateException;
 import me.lojosho.shaded.configurate.ConfigurationOptions;
 import me.lojosho.shaded.configurate.yaml.NodeStyle;
 import me.lojosho.shaded.configurate.yaml.YamlConfigurationLoader;
+import com.github.Anon8281.universalScheduler.UniversalScheduler;
+import com.github.Anon8281.universalScheduler.scheduling.schedulers.TaskScheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.permissions.Permission;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.nio.file.Path;
@@ -55,6 +58,7 @@ public final class HMCCosmeticsPlugin extends HibiscusPlugin {
 
     private static HMCCosmeticsPlugin instance;
     private static YamlConfigurationLoader configLoader;
+    private static TaskScheduler scheduler;
 
     @Getter
     private PlayerSearchManager playerSearchManager;
@@ -68,6 +72,8 @@ public final class HMCCosmeticsPlugin extends HibiscusPlugin {
 
     @Override
     public void onStart() {
+        scheduler = UniversalScheduler.getScheduler(this);
+
         // Plugin startup logic
         instance = this;
 
@@ -178,10 +184,20 @@ public final class HMCCosmeticsPlugin extends HibiscusPlugin {
             }
             Database.save(user);
         }
+
+        if (scheduler != null) {
+            scheduler.cancelTasks();
+            scheduler = null;
+        }
     }
 
     public static HMCCosmeticsPlugin getInstance() {
         return instance;
+    }
+
+    @NotNull
+    public static TaskScheduler getScheduler() {
+        return scheduler;
     }
 
     public static void setup() {

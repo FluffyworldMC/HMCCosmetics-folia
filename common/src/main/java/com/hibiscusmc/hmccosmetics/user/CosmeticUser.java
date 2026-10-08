@@ -41,7 +41,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.potion.PotionEffectType;
-import org.bukkit.scheduler.BukkitTask;
+import com.github.Anon8281.universalScheduler.scheduling.tasks.MyScheduledTask;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -52,7 +52,7 @@ import java.util.logging.Level;
 public class CosmeticUser implements CosmeticHolder {
     @Getter
     private final UUID uniqueId;
-    private int taskId = -1;
+    private MyScheduledTask tickTask;
     private final HashMap<CosmeticSlot, Cosmetic> playerCosmetics = new HashMap<>();
     private UserWardrobeManager userWardrobeManager;
     private UserBalloonManager userBalloonManager;
@@ -175,17 +175,21 @@ public class CosmeticUser implements CosmeticHolder {
     /**
      * Start ticking against the {@link CosmeticUser}.
      * @implNote The tick-rate is determined by the tick period specified in the configuration, if it is less-than or equal to 0
-     * there will be no {@link BukkitTask} created, and the {@link CosmeticUser#taskId} will be -1
+     * there will be no task created
      */
     public final void startTicking() {
         int tickPeriod = Settings.getTickPeriod();
-        if(tickPeriod <= 0) {
+        if (tickPeriod <= 0) {
             MessagesUtil.sendDebugMessages("CosmeticUser tick is disabled.");
             return;
         }
 
-        final BukkitTask task = Bukkit.getScheduler().runTaskTimer(HMCCosmeticsPlugin.getInstance(), this::tick, 0, tickPeriod);
-        this.taskId = task.getTaskId();
+        Entity entity = getEntity();
+        if (entity != null) {
+            this.tickTask = HMCCosmeticsPlugin.getScheduler().runTaskTimer(entity, this::tick, 0, tickPeriod);
+        } else {
+            this.tickTask = HMCCosmeticsPlugin.getScheduler().runTaskTimer(this::tick, 0, tickPeriod);
+        }
     }
 
     /**
@@ -210,8 +214,9 @@ public class CosmeticUser implements CosmeticHolder {
     }
 
     public void destroy() {
-        if(this.taskId != -1) { // ensure we're actually ticking this user.
-            Bukkit.getScheduler().cancelTask(taskId);
+        if (this.tickTask != null) {
+            this.tickTask.cancel();
+            this.tickTask = null;
         }
 
         despawnBackpack();
@@ -557,10 +562,17 @@ public class CosmeticUser implements CosmeticHolder {
                     WardrobeSettings.getTransitionStay(),
                     WardrobeSettings.getTransitionFadeOut()
             );
-            Bukkit.getScheduler().runTaskLater(HMCCosmeticsPlugin.getInstance(), () -> {
+            Player player = getPlayer();
+            int delay = WardrobeSettings.getTransitionDelay();
+            if (player != null && delay > 0) {
+                HMCCosmeticsPlugin.getScheduler().runTaskLater(player, () -> {
+                    userWardrobeManager.end();
+                    userWardrobeManager = null;
+                }, delay);
+            } else {
                 userWardrobeManager.end();
                 userWardrobeManager = null;
-            }, WardrobeSettings.getTransitionDelay());
+            }
         } else {
             userWardrobeManager.end();
             userWardrobeManager = null;

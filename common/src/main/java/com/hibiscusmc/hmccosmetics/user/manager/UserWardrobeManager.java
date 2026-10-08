@@ -30,7 +30,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.scheduler.BukkitRunnable;
+import com.github.Anon8281.universalScheduler.scheduling.tasks.MyScheduledTask;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -64,6 +64,7 @@ public class UserWardrobeManager {
     private BossBar bossBar;
     @Getter
     private boolean active;
+    private MyScheduledTask wardrobeTask;
     @Setter
     @Getter
     private WardrobeStatus wardrobeStatus;
@@ -224,7 +225,12 @@ public class UserWardrobeManager {
                     WardrobeSettings.getTransitionStay(),
                     WardrobeSettings.getTransitionFadeOut()
             );
-            Bukkit.getScheduler().runTaskLater(HMCCosmeticsPlugin.getInstance(), run, WardrobeSettings.getTransitionDelay());
+            int delay = WardrobeSettings.getTransitionDelay();
+            if (delay > 0) {
+                HMCCosmeticsPlugin.getScheduler().runTaskLater(player, run, delay);
+            } else {
+                run.run();
+            }
         } else {
             run.run();
         }
@@ -232,6 +238,10 @@ public class UserWardrobeManager {
     }
 
     public void end() {
+        if (wardrobeTask != null) {
+            wardrobeTask.cancel();
+            wardrobeTask = null;
+        }
         setWardrobeStatus(WardrobeStatus.STOPPING);
         Player player = user.getPlayer();
 
@@ -315,14 +325,17 @@ public class UserWardrobeManager {
 
     private void update() {
         final AtomicInteger data = new AtomicInteger();
+        Player playerEntity = user.getPlayer();
+        if (playerEntity == null) return;
 
-        BukkitRunnable runnable = new BukkitRunnable() {
-            @Override
-            public void run() {
+        wardrobeTask = HMCCosmeticsPlugin.getScheduler().runTaskTimer(playerEntity, () -> {
                 Player player = user.getPlayer();
                 if (!active || player == null) {
                     MessagesUtil.sendDebugMessages("WardrobeEnd[user=" + user.getUniqueId() + ",reason=Active is false]");
-                    this.cancel();
+                    if (wardrobeTask != null) {
+                        wardrobeTask.cancel();
+                        wardrobeTask = null;
+                    }
                     return;
                 }
                 MessagesUtil.sendDebugMessages("WardrobeUpdate[user=" + user.getUniqueId() + ",status=" + getWardrobeStatus() + "]");
@@ -370,10 +383,7 @@ public class UserWardrobeManager {
                 } else {
                     HMCCPacketManager.equipmentSlotUpdate(user.getPlayer(), true, viewer); // Optifine dumbassery
                 }
-            }
-        };
-
-        runnable.runTaskTimer(HMCCosmeticsPlugin.getInstance(), 0, 2);
+        }, 0, 2);
     }
 
     public enum WardrobeStatus {
