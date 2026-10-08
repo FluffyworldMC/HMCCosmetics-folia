@@ -611,9 +611,10 @@ public class CosmeticUser implements CosmeticHolder {
         if (this.userBalloonManager != null) return;
 
         org.bukkit.entity.Entity entity = getEntity();
+        if (entity == null) return;
 
-        UserBalloonManager userBalloonManager1 = new UserBalloonManager(this, entity.getLocation());
-        userBalloonManager1.getModelEntity().teleport(entity.getLocation().add(cosmeticBalloonType.getBalloonOffset()));
+        Location location = entity.getLocation().clone().add(cosmeticBalloonType.getBalloonOffset());
+        UserBalloonManager userBalloonManager1 = new UserBalloonManager(this, location);
 
         userBalloonManager1.spawnModel(cosmeticBalloonType, getCosmeticColor(cosmeticBalloonType.getSlot()));
         userBalloonManager1.addPlayerToModel(this, cosmeticBalloonType, getCosmeticColor(cosmeticBalloonType.getSlot()));

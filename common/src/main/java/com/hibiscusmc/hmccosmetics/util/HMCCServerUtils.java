@@ -1,8 +1,11 @@
 package com.hibiscusmc.hmccosmetics.util;
 
+import com.github.Anon8281.universalScheduler.UniversalScheduler;
 import com.hibiscusmc.hmccosmetics.HMCCosmeticsPlugin;
 import me.lojosho.hibiscuscommons.nms.NMSHandlers;
 import org.bukkit.*;
+import org.bukkit.entity.Entity;
+import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.persistence.PersistentDataType;
 import org.jetbrains.annotations.Nullable;
 
@@ -27,8 +30,29 @@ public class HMCCServerUtils {
         };
     }
 
-    public static org.bukkit.entity.Entity getEntity(int entityId, World world) {
+    public static Entity getEntity(int entityId, World world) {
         return NMSHandlers.getHandler().getUtilHandler().getEntity(entityId, world);
+    }
+
+    /**
+     * Canvas and Folia reject synchronous {@link Entity#teleport(Location)} on a region thread.
+     */
+    public static void teleport(Entity entity, Location location) {
+        if (entity == null || location == null || location.getWorld() == null) return;
+        if (UniversalScheduler.isFolia || UniversalScheduler.isCanvas) {
+            entity.teleportAsync(location);
+            return;
+        }
+        entity.teleport(location);
+    }
+
+    public static void teleport(Entity entity, Location location, PlayerTeleportEvent.TeleportCause cause) {
+        if (entity == null || location == null || location.getWorld() == null) return;
+        if (UniversalScheduler.isFolia || UniversalScheduler.isCanvas) {
+            entity.teleportAsync(location, cause);
+            return;
+        }
+        entity.teleport(location, cause);
     }
 
     /**

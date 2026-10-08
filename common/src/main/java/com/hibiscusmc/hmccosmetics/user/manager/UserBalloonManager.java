@@ -1,6 +1,7 @@
 package com.hibiscusmc.hmccosmetics.user.manager;
 
 import com.hibiscusmc.hmccosmetics.HMCCosmeticsPlugin;
+import com.hibiscusmc.hmccosmetics.util.HMCCServerUtils;
 import com.hibiscusmc.hmccosmetics.config.Settings;
 import com.hibiscusmc.hmccosmetics.cosmetic.types.CosmeticBalloonType;
 import com.hibiscusmc.hmccosmetics.user.CosmeticUser;
@@ -183,7 +184,7 @@ public class UserBalloonManager {
     }
 
     public void setLocation(Location location) {
-        this.getModelEntity().teleport(location);
+        HMCCServerUtils.teleport(this.getModelEntity(), location);
     }
 
     public Vector getVelocity() {
