@@ -62,7 +62,11 @@ public final class CosmeticLayout {
         try {
             List<String> rawSlots = slotsNode.getList(String.class);
             if (rawSlots == null || rawSlots.isEmpty()) return List.of();
-            return Menu.getSlots(rawSlots).stream().distinct().sorted().toList();
+            return Menu.getSlots(rawSlots).stream()
+                    .filter(slot -> slot >= 0 && slot < 54)
+                    .distinct()
+                    .sorted()
+                    .toList();
         } catch (SerializationException e) {
             MessagesUtil.sendDebugMessages("Unable to parse cosmetic-layout slots: " + e.getMessage(), Level.WARNING);
             return List.of();

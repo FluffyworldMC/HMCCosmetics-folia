@@ -47,6 +47,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.logging.Level;
 
 public class Menu {
 
@@ -87,7 +88,21 @@ public class Menu {
         this.cosmeticPage = Math.max(1, cosmeticPage);
 
         title = config.node("title").getString("chest");
-        rows = config.node("rows").getInt(1);
+
+        int configuredRows = config.node("rows").getInt(1);
+        if (cosmeticLayout != null) {
+            int maxSlot = cosmeticLayout.slots().stream().mapToInt(Integer::intValue).max().orElse(-1);
+            int requiredRows = maxSlot < 0 ? 1 : (maxSlot / 9) + 1;
+            int targetRows = Math.min(6, Math.max(configuredRows, requiredRows));
+            if (requiredRows > configuredRows) {
+                MessagesUtil.sendDebugMessages("Menu " + id + " has rows=" + configuredRows
+                        + " but its cosmetic-layout needs " + requiredRows + " rows. Using " + targetRows + ".", Level.WARNING);
+            }
+            rows = targetRows;
+        } else {
+            rows = configuredRows;
+        }
+
         cooldown = config.node("click-cooldown").getLong(Settings.getDefaultMenuCooldown());
         permissionNode = config.node("permission").getString("");
         refreshRate = config.node("refresh-rate").getInt(-1);
@@ -141,6 +156,11 @@ public class Menu {
             }
 
             for (Integer slot : slots) {
+                if (slot < 0 || slot >= rows * 9) {
+                    MessagesUtil.sendDebugMessages("Skipping invalid slot " + slot + " for item " + config.key() + " in menu " + id, Level.WARNING);
+                    continue;
+                }
+
                 MenuItem menuItem = new MenuItem(slots, item, type, priority, config);
                 if (items.containsKey(slot)) {
                     List<MenuItem> menuItems = items.get(slot);
@@ -237,8 +257,11 @@ public class Menu {
         final MenuView view = buildView(viewer, cosmeticHolder);
         if (cosmeticLayout != null) {
             // Remove stale cosmetic items when a page/filter no longer fills every layout slot.
+            int inventorySize = gui.getInventory().getSize();
             for (int slot : cosmeticLayout.slots()) {
-                gui.removeItem(slot);
+                if (slot >= 0 && slot < inventorySize) {
+                    gui.removeItem(slot);
+                }
             }
         }
         StringBuilder title = new StringBuilder(this.title);
@@ -360,6 +383,8 @@ public class Menu {
             if (index >= visible.size()) break;
 
             int slot = cosmeticLayout.slots().get(i);
+            if (slot < 0 || slot >= rows * 9) continue;
+
             MenuItem menuItem = CosmeticMenuItems.createMenuItem(visible.get(index), slot);
             if (menuItem != null) {
                 view.put(slot, new ArrayList<>(List.of(menuItem)));
@@ -398,11 +423,11 @@ public class Menu {
             boolean filterToggle = item.itemConfig().node("filter-toggle").getBoolean(false);
 
             if (nextPage && view.page() >= view.totalPages()) {
-                gui.removeItem(slot);
+                removeItemIfValid(gui, slot);
                 return;
             }
             if (previousPage && view.page() <= 1) {
-                gui.removeItem(slot);
+                removeItemIfValid(gui, slot);
                 return;
             }
 
@@ -464,6 +489,11 @@ public class Menu {
             gui.updateItem(slot, guiItem);
             break;
         }
+    }
+
+    private static void removeItemIfValid(Gui gui, int slot) {
+        if (slot < 0 || slot >= gui.getInventory().getSize()) return;
+        gui.removeItem(slot);
     }
 
     /**
