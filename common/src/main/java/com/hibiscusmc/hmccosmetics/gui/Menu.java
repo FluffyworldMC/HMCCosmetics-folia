@@ -15,7 +15,6 @@ import com.hibiscusmc.hmccosmetics.user.CosmeticUser;
 import com.hibiscusmc.hmccosmetics.util.HMCCInventoryUtils;
 import com.hibiscusmc.hmccosmetics.util.MessagesUtil;
 import dev.triumphteam.gui.builder.item.ItemBuilder;
-import dev.triumphteam.gui.components.GuiType;
 import dev.triumphteam.gui.guis.Gui;
 import dev.triumphteam.gui.guis.GuiItem;
 import io.papermc.paper.datacomponent.item.CustomModelData;
@@ -199,8 +198,7 @@ public class Menu {
         Gui gui = Gui.gui()
                 .rows(rows)
                 .title(component)
-                .type(GuiType.CHEST)
-                .inventory((title, owner, type) -> Bukkit.createInventory(owner, rows * 9, title))
+                .inventory((title, owner, inventorySize) -> Bukkit.createInventory(owner, inventorySize, title))
                 .create();
 
         gui.setDefaultClickAction(event -> event.setCancelled(true));
