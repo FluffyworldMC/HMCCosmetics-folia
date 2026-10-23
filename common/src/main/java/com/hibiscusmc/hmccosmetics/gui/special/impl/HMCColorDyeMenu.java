@@ -8,6 +8,7 @@ import com.hibiscusmc.hmccosmetics.config.Settings;
 import com.hibiscusmc.hmccosmetics.cosmetic.Cosmetic;
 import com.hibiscusmc.hmccosmetics.cosmetic.CosmeticHolder;
 import com.hibiscusmc.hmccosmetics.gui.special.DyeMenu;
+import com.hibiscusmc.hmccosmetics.util.HMCCInventoryUtils;
 import me.lojosho.hibiscuscommons.hooks.Hooks;
 import me.lojosho.hibiscuscommons.nms.NMSHandlers;
 import me.lojosho.hibiscuscommons.util.AdventureUtils;
@@ -27,7 +28,7 @@ public class HMCColorDyeMenu implements DyeMenu {
 
         Gui gui = HMCColorApi.createColorMenu(viewer);
         gui.updateTitle(AdventureUtils.MINI_MESSAGE.deserialize(Hooks.processPlaceholders(viewer, Settings.getDyeMenuName())));
-        gui.setItem(Settings.getDyeMenuInputSlot(), new GuiItem(originalItem));
+        gui.setItem(Settings.getDyeMenuInputSlot(), new GuiItem(HMCCInventoryUtils.hideMenuTooltipDetails(originalItem.clone())));
         gui.setDefaultTopClickAction(event -> {
             if (event.getSlot() == Settings.getDyeMenuOutputSlot()) {
                 ItemStack item = event.getInventory().getItem(Settings.getDyeMenuOutputSlot());

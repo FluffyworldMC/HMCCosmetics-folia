@@ -108,12 +108,13 @@ public final class HMCCosmeticsAPI {
     }
 
     /**
-     * Retrieves a list of all cosmetics currently registered with HMCC.
+     * Retrieves a list of all cosmetics currently registered with HMCC, ordered by their
+     * configured priority (highest first).
      *
      * @return an {@code immutable} list containing all registered {@link Cosmetic} object
      */
     public static @NotNull List<Cosmetic> getAllCosmetics() {
-        return List.copyOf(Cosmetics.values());
+        return List.copyOf(Cosmetics.getSortedCosmetics());
     }
 
     /**

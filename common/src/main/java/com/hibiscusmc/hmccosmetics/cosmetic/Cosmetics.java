@@ -1,6 +1,5 @@
 package com.hibiscusmc.hmccosmetics.cosmetic;
 
-import com.google.common.collect.HashBiMap;
 import com.hibiscusmc.hmccosmetics.HMCCosmeticsPlugin;
 import com.hibiscusmc.hmccosmetics.util.MessagesUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -16,13 +15,13 @@ import org.jetbrains.annotations.Nullable;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Set;
+import java.util.*;
 import java.util.logging.Level;
 import java.util.stream.Stream;
 
 @Slf4j
 public class Cosmetics {
-    private static final HashBiMap<String, Cosmetic> COSMETICS = HashBiMap.create();
+    private static final Map<String, Cosmetic> COSMETICS = new LinkedHashMap<>();
 
     private static CosmeticProvider PROVIDER = CosmeticProvider.Default.INSTANCE;
 
@@ -46,13 +45,28 @@ public class Cosmetics {
     @Contract(pure = true)
     @NotNull
     public static Set<Cosmetic> values() {
-        return COSMETICS.values();
+        return new LinkedHashSet<>(COSMETICS.values());
     }
 
     @Contract(pure = true)
     @NotNull
     public static Set<String> keys() {
-        return COSMETICS.keySet();
+        return new LinkedHashSet<>(COSMETICS.keySet());
+    }
+
+    /**
+     * Returns all loaded cosmetics ordered by priority (highest first). Cosmetics with the same
+     * priority keep the order in which their files and entries were loaded.
+     *
+     * @return the sorted cosmetics
+     */
+    @Contract(pure = true)
+    @NotNull
+    public static List<Cosmetic> getSortedCosmetics() {
+        List<Cosmetic> sorted = new ArrayList<>(COSMETICS.values());
+        // List#sort is stable, so equal priorities keep the deterministic load order.
+        sorted.sort(Comparator.comparingInt(Cosmetic::getPriority).reversed());
+        return sorted;
     }
 
     public static boolean hasCosmetic(String id) {
@@ -69,26 +83,34 @@ public class Cosmetics {
         File cosmeticFolder = new File(HMCCosmeticsPlugin.getInstance().getDataFolder() + "/cosmetics");
         if (!cosmeticFolder.exists()) cosmeticFolder.mkdir();
 
-        File[] directoryListing = cosmeticFolder.listFiles();
-        if (directoryListing == null) return;
-
+        List<Path> cosmeticFiles;
         try (Stream<Path> walkStream = Files.walk(cosmeticFolder.toPath())) {
-            walkStream.filter(p -> p.toFile().isFile()).forEach(child -> {
-                if (child.toString().contains(".yml") || child.toString().contains(".yaml")) {
-                    MessagesUtil.sendDebugMessages("Scanning " + child);
-                    // Loads file
-                    YamlConfigurationLoader loader = YamlConfigurationLoader.builder().path(child).build();
-                    CommentedConfigurationNode root;
-                    try {
-                        root = loader.load();
-                    } catch (ConfigurateException e) {
-                        throw new RuntimeException(e);
-                    }
-                    setupCosmetics(root);
-                }
-            });
+            cosmeticFiles = walkStream
+                    .filter(p -> p.toFile().isFile())
+                    .filter(p -> p.toString().endsWith(".yml") || p.toString().endsWith(".yaml"))
+                    // Deterministic load order: equal priorities are ordered by file path.
+                    .sorted(Comparator.comparing(Path::toString))
+                    .toList();
         } catch (Exception e) {
             e.printStackTrace();
+            return;
+        }
+
+        for (Path child : cosmeticFiles) {
+            MessagesUtil.sendDebugMessages("Scanning " + child);
+            YamlConfigurationLoader loader = YamlConfigurationLoader.builder().path(child).build();
+            CommentedConfigurationNode root;
+            try {
+                root = loader.load();
+            } catch (ConfigurateException e) {
+                throw new RuntimeException(e);
+            }
+
+            ConfigurationNode priorityNode = root.node("priority");
+            int filePriority = (!priorityNode.virtual() && !priorityNode.isMap() && !priorityNode.isList())
+                    ? priorityNode.getInt(0)
+                    : 0;
+            setupCosmetics(root, filePriority);
         }
 
         refreshPermissions();
@@ -119,9 +141,15 @@ public class Cosmetics {
         return PROVIDER;
     }
 
-    private static void setupCosmetics(@NotNull CommentedConfigurationNode config) {
+    private static void setupCosmetics(@NotNull CommentedConfigurationNode config, int filePriority) {
         for (ConfigurationNode cosmeticConfig : config.childrenMap().values()) {
             String id = cosmeticConfig.key().toString();
+
+            // Top-level "priority" is file metadata. A map/entry named "priority" is still a cosmetic.
+            if ("priority".equalsIgnoreCase(id) && !cosmeticConfig.isMap()) {
+                continue;
+            }
+
             MessagesUtil.sendDebugMessages("Attempting to add " + id);
             ConfigurationNode slotNode = cosmeticConfig.node("slot");
             if (slotNode.virtual()) {
@@ -136,7 +164,9 @@ public class Cosmetics {
             }
 
             try {
-                addCosmetic(PROVIDER.createCosmetic(id, cosmeticConfig, cosmeticSlot));
+                Cosmetic cosmetic = PROVIDER.createCosmetic(id, cosmeticConfig, cosmeticSlot);
+                cosmetic.setPriority(cosmeticConfig.node("priority").getInt(filePriority));
+                addCosmetic(cosmetic);
             } catch(Exception ex) {
                 log.error("Unable to construct cosmetic for {}, skipping processing it.", id, ex);
             }

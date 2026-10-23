@@ -12,6 +12,7 @@ import com.hibiscusmc.hmccosmetics.gui.type.Type;
 import com.hibiscusmc.hmccosmetics.gui.type.Types;
 import com.hibiscusmc.hmccosmetics.gui.type.types.TypeCosmetic;
 import com.hibiscusmc.hmccosmetics.user.CosmeticUser;
+import com.hibiscusmc.hmccosmetics.util.HMCCInventoryUtils;
 import com.hibiscusmc.hmccosmetics.util.MessagesUtil;
 import dev.triumphteam.gui.builder.item.ItemBuilder;
 import dev.triumphteam.gui.components.GuiType;
@@ -30,6 +31,7 @@ import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import com.github.Anon8281.universalScheduler.scheduling.tasks.MyScheduledTask;
 import org.bukkit.Bukkit;
@@ -37,6 +39,7 @@ import org.bukkit.Color;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.ClickType;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -62,10 +65,26 @@ public class Menu {
     private final HashMap<Integer, List<MenuItem>> items;
     @Getter
     private final int refreshRate;
+    @Getter
+    private final @Nullable CosmeticLayout cosmeticLayout;
+    @Getter
+    private final @Nullable String cosmeticBaseId;
+    @Getter
+    private final int cosmeticPage;
 
     public Menu(String id, @NotNull ConfigurationNode config) {
+        this(id, config, null, null, 1);
+    }
+
+    public Menu(String id, @NotNull ConfigurationNode config,
+                @Nullable CosmeticLayout cosmeticLayout,
+                @Nullable String cosmeticBaseId,
+                int cosmeticPage) {
         this.id = config.node("id").getString(id);
         this.config = config;
+        this.cosmeticLayout = cosmeticLayout;
+        this.cosmeticBaseId = cosmeticBaseId;
+        this.cosmeticPage = Math.max(1, cosmeticPage);
 
         title = config.node("title").getString("chest");
         rows = config.node("rows").getInt(1);
@@ -215,6 +234,13 @@ public class Menu {
     }
 
     private void updateMenu(Player viewer, CosmeticHolder cosmeticHolder, Gui gui) {
+        final MenuView view = buildView(viewer, cosmeticHolder);
+        if (cosmeticLayout != null) {
+            // Remove stale cosmetic items when a page/filter no longer fills every layout slot.
+            for (int slot : cosmeticLayout.slots()) {
+                gui.removeItem(slot);
+            }
+        }
         StringBuilder title = new StringBuilder(this.title);
 
         int row = 0;
@@ -235,11 +261,11 @@ public class Menu {
 
                     boolean occupied = false;
 
-                    if (items.containsKey(i)) {
+                    if (view.items().containsKey(i)) {
                         // Handles the items
-                        List<MenuItem> menuItems = items.get(i);
+                        List<MenuItem> menuItems = view.items().get(i);
                         MenuItem item = menuItems.getFirst();
-                        updateItem(viewer, cosmeticHolder, gui, i);
+                        updateItem(viewer, cosmeticHolder, gui, i, view);
 
                         if (item.type() instanceof TypeCosmetic) {
                             Cosmetic cosmetic = Cosmetics.getCosmetic(item.itemConfig().node("cosmetic").getString(""));
@@ -271,8 +297,8 @@ public class Menu {
                 TextColor lockedColor = resolveStateColor(Settings.getLockedCosmeticColor());
 
                 for (int i = 0; i < gui.getInventory().getSize(); i++) {
-                    if (items.containsKey(i)) {
-                        List<MenuItem> menuItems = items.get(i);
+                    if (view.items().containsKey(i)) {
+                        List<MenuItem> menuItems = view.items().get(i);
                         MenuItem item = menuItems.getFirst();
                         updateItem(viewer, cosmeticHolder, gui, i, (itemStack -> {
                             // Handles the items
@@ -295,18 +321,55 @@ public class Menu {
 
                                 itemStack.setData(DataComponentTypes.CUSTOM_MODEL_DATA, builder.build());
                             }
-                        }));
+                        }), view);
                     }
                 }
             }
             case null, default -> {
                 for (int i = 0; i < gui.getInventory().getSize(); i++) {
-                    if (items.containsKey(i)) {
-                        updateItem(viewer, cosmeticHolder, gui, i);
+                    if (view.items().containsKey(i)) {
+                        updateItem(viewer, cosmeticHolder, gui, i, view);
                     }
                 }
             }
         }
+    }
+
+    /**
+     * Builds the items that should be displayed to this viewer for the current page. For automatic
+     * cosmetic menus this also applies the owned/unowned filter and reflows the page.
+     */
+    private MenuView buildView(Player viewer, CosmeticHolder cosmeticHolder) {
+        Map<Integer, List<MenuItem>> view = new HashMap<>();
+        for (Map.Entry<Integer, List<MenuItem>> entry : items.entrySet()) {
+            view.put(entry.getKey(), new ArrayList<>(entry.getValue()));
+        }
+
+        if (cosmeticLayout == null || cosmeticBaseId == null || cosmeticLayout.pageSize() == 0) {
+            return new MenuView(view, 1, 1);
+        }
+
+        CosmeticFilterMode mode = Menus.getCosmeticFilter(viewer.getUniqueId());
+        List<Cosmetic> visible = cosmeticLayout.visibleCosmetics(cosmeticHolder, mode);
+        int totalPages = cosmeticLayout.totalPages(visible.size());
+        int page = Math.min(cosmeticPage, totalPages);
+        int start = (page - 1) * cosmeticLayout.pageSize();
+
+        for (int i = 0; i < cosmeticLayout.pageSize(); i++) {
+            int index = start + i;
+            if (index >= visible.size()) break;
+
+            int slot = cosmeticLayout.slots().get(i);
+            MenuItem menuItem = CosmeticMenuItems.createMenuItem(visible.get(index), slot);
+            if (menuItem != null) {
+                view.put(slot, new ArrayList<>(List.of(menuItem)));
+            }
+        }
+
+        return new MenuView(view, page, totalPages);
+    }
+
+    private record MenuView(Map<Integer, List<MenuItem>> items, int page, int totalPages) {
     }
 
     /**
@@ -319,19 +382,38 @@ public class Menu {
         return color != null ? color : NamedTextColor.WHITE;
     }
 
-    private void updateItem(Player viewer, CosmeticHolder cosmeticHolder, Gui gui, int slot) {
-        updateItem(viewer, cosmeticHolder, gui, slot, null);
+    private void updateItem(Player viewer, CosmeticHolder cosmeticHolder, Gui gui, int slot, MenuView view) {
+        updateItem(viewer, cosmeticHolder, gui, slot, null, view);
     }
 
-    private void updateItem(Player viewer, CosmeticHolder cosmeticHolder, Gui gui, int slot, @Nullable Consumer<ItemStack> consumer) {
-        if (!items.containsKey(slot)) return;
-        List<MenuItem> menuItems = items.get(slot);
+    private void updateItem(Player viewer, CosmeticHolder cosmeticHolder, Gui gui, int slot,
+                            @Nullable Consumer<ItemStack> consumer, MenuView view) {
+        if (!view.items().containsKey(slot)) return;
+        List<MenuItem> menuItems = view.items().get(slot);
         if (menuItems.isEmpty()) return;
 
         for (MenuItem item : menuItems) {
+            boolean nextPage = item.itemConfig().node("next-page").getBoolean(false);
+            boolean previousPage = item.itemConfig().node("previous-page").getBoolean(false);
+            boolean filterToggle = item.itemConfig().node("filter-toggle").getBoolean(false);
+
+            if (nextPage && view.page() >= view.totalPages()) {
+                gui.removeItem(slot);
+                return;
+            }
+            if (previousPage && view.page() <= 1) {
+                gui.removeItem(slot);
+                return;
+            }
+
             Type type = item.type();
             ItemStack itemStack = item.item().clone();
             ItemStack modifiedItem = getMenuItem(viewer, cosmeticHolder, type, item.itemConfig(), itemStack, slot);
+
+            if (filterToggle && cosmeticLayout != null) {
+                modifiedItem = applyFilterLabel(modifiedItem, cosmeticLayout.label(Menus.getCosmeticFilter(viewer.getUniqueId())));
+            }
+
             if (consumer != null) {
                 // Shading decoration is best-effort: a failure here must never stop the item from
                 // being placed, otherwise the whole menu renders empty.
@@ -343,23 +425,40 @@ public class Menu {
             }
             if (modifiedItem.getType().isAir()) continue;
             GuiItem guiItem = ItemBuilder.from(modifiedItem).asGuiItem();
-            guiItem.setAction(event -> {
-                UUID uuid = viewer.getUniqueId();
-                if (Settings.isMenuClickCooldown()) {
-                    Long userCooldown = Menus.getCooldown(uuid);
-                    if (userCooldown != 0 && (System.currentTimeMillis() - Menus.getCooldown(uuid) <= getCooldown())) {
-                        MessagesUtil.sendDebugMessages("Cooldown for " + viewer.getUniqueId() + " System time: " + System.currentTimeMillis() + " Cooldown: " + Menus.getCooldown(viewer.getUniqueId()) + " Difference: " + (System.currentTimeMillis() - Menus.getCooldown(viewer.getUniqueId())));
-                        MessagesUtil.sendMessage(viewer, "on-click-cooldown");
-                        return;
-                    } else {
-                        Menus.addCooldown(uuid, System.currentTimeMillis());
+
+            if ((nextPage || previousPage) && cosmeticBaseId != null) {
+                final int targetPage = view.page() + (nextPage ? 1 : -1);
+                final String targetId = targetPage == 1 ? cosmeticBaseId : cosmeticBaseId + "_" + targetPage;
+                guiItem.setAction(event -> {
+                    event.setCancelled(true);
+                    Menu target = Menus.getMenu(targetId);
+                    if (target != null) target.openMenu(viewer, cosmeticHolder);
+                });
+            } else if (filterToggle && cosmeticLayout != null) {
+                guiItem.setAction(event -> {
+                    event.setCancelled(true);
+                    Menus.toggleCosmeticFilter(viewer.getUniqueId());
+                    openFilteredPage(viewer, cosmeticHolder);
+                });
+            } else {
+                guiItem.setAction(event -> {
+                    UUID uuid = viewer.getUniqueId();
+                    if (Settings.isMenuClickCooldown()) {
+                        Long userCooldown = Menus.getCooldown(uuid);
+                        if (userCooldown != 0 && (System.currentTimeMillis() - Menus.getCooldown(uuid) <= getCooldown())) {
+                            MessagesUtil.sendDebugMessages("Cooldown for " + viewer.getUniqueId() + " System time: " + System.currentTimeMillis() + " Cooldown: " + Menus.getCooldown(viewer.getUniqueId()) + " Difference: " + (System.currentTimeMillis() - Menus.getCooldown(viewer.getUniqueId())));
+                            MessagesUtil.sendMessage(viewer, "on-click-cooldown");
+                            return;
+                        } else {
+                            Menus.addCooldown(uuid, System.currentTimeMillis());
+                        }
                     }
-                }
-                MessagesUtil.sendDebugMessages("Updated Menu Item in slot number " + slot);
-                final ClickType clickType = event.getClick();
-                if (type != null) type.run(viewer, cosmeticHolder, item.itemConfig(), clickType);
-                updateMenu(viewer, cosmeticHolder, gui);
-            });
+                    MessagesUtil.sendDebugMessages("Updated Menu Item in slot number " + slot);
+                    final ClickType clickType = event.getClick();
+                    if (type != null) type.run(viewer, cosmeticHolder, item.itemConfig(), clickType);
+                    updateMenu(viewer, cosmeticHolder, gui);
+                });
+            }
 
             MessagesUtil.sendDebugMessages("Set an item in slot " + slot + " in the menu of " + getId());
             gui.updateItem(slot, guiItem);
@@ -367,8 +466,52 @@ public class Menu {
         }
     }
 
+    /**
+     * Reopens the current automatic menu on a page that exists for the newly selected filter.
+     */
+    private void openFilteredPage(Player viewer, CosmeticHolder cosmeticHolder) {
+        if (cosmeticLayout == null || cosmeticBaseId == null) return;
+
+        CosmeticFilterMode mode = Menus.getCosmeticFilter(viewer.getUniqueId());
+        int totalPages = cosmeticLayout.totalPages(cosmeticLayout.visibleCosmetics(cosmeticHolder, mode).size());
+        int page = Math.min(cosmeticPage, totalPages);
+        String targetId = page == 1 ? cosmeticBaseId : cosmeticBaseId + "_" + page;
+
+        Menu target = Menus.getMenu(targetId);
+        if (target != null) target.openMenu(viewer, cosmeticHolder);
+    }
+
+    private static ItemStack applyFilterLabel(ItemStack item, String label) {
+        if (!item.hasItemMeta()) return item;
+
+        ItemMeta itemMeta = item.getItemMeta();
+        if (itemMeta == null) return item;
+
+        if (itemMeta.hasDisplayName()) {
+            itemMeta.displayName(replaceFilterPlaceholder(itemMeta.displayName(), label));
+        }
+
+        if (itemMeta.hasLore()) {
+            List<Component> lore = new ArrayList<>();
+            for (Component line : itemMeta.lore()) {
+                lore.add(replaceFilterPlaceholder(line, label));
+            }
+            itemMeta.lore(lore);
+        }
+
+        item.setItemMeta(itemMeta);
+        return item;
+    }
+
+    private static Component replaceFilterPlaceholder(Component component, String label) {
+        String serialized = MiniMessage.miniMessage().serialize(component)
+                .replace("%cosmetic_filter%", label);
+        return MiniMessage.miniMessage().deserialize(serialized)
+                .decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE);
+    }
+
     @NotNull
-    private List<Integer> getSlots(@NotNull List<String> slotString) {
+    static List<Integer> getSlots(@NotNull List<String> slotString) {
         List<Integer> slots = new ArrayList<>();
 
         for (String a : slotString) {
@@ -386,7 +529,7 @@ public class Menu {
     }
 
     @NotNull
-    private List<Integer> getSlots(int small, int max) {
+    private static List<Integer> getSlots(int small, int max) {
         List<Integer> slots = new ArrayList<>();
 
         for (int i = small; i <= max; i++) slots.add(i);
@@ -396,8 +539,8 @@ public class Menu {
     @Contract("_, _, _, _, _, _ -> param4")
     @NotNull
     private ItemStack getMenuItem(Player viewer, CosmeticHolder cosmeticHolder, Type type, ConfigurationNode config, ItemStack itemStack, int slot) {
-        if (!itemStack.hasItemMeta()) return itemStack;
-        return type.setItem(viewer, cosmeticHolder, config, itemStack, slot);
+        if (!itemStack.hasItemMeta()) return HMCCInventoryUtils.hideMenuTooltipDetails(itemStack);
+        return HMCCInventoryUtils.hideMenuTooltipDetails(type.setItem(viewer, cosmeticHolder, config, itemStack, slot));
     }
 
     public boolean canOpen(Player player) {

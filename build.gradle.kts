@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "com.hibiscusmc"
-version = "2.9.2"
+version = "3.0.0"
 
 val javaVersion = JavaLanguageVersion.of(libs.versions.java.get())
 

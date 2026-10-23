@@ -58,6 +58,9 @@ public abstract class Cosmetic {
     /** Whether the cosmetic is dyeable or not. */
     private boolean dyeable;
 
+    /** Ordering priority for automatic cosmetic menus. Higher values are shown first. */
+    private int priority;
+
     /** The config for the cosmetic */
     private ConfigurationNode config;
 

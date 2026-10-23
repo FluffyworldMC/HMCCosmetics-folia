@@ -4,7 +4,9 @@ import com.hibiscusmc.hmccosmetics.HMCCosmeticsPlugin;
 import com.hibiscusmc.hmccosmetics.cosmetic.CosmeticSlot;
 import org.bukkit.NamespacedKey;
 import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
@@ -127,6 +129,22 @@ public class HMCCInventoryUtils {
 
     public static NamespacedKey getCosmeticKey() {
         return new NamespacedKey(HMCCosmeticsPlugin.getInstance(), "cosmetic");
+    }
+
+    /**
+     * Hides vanilla tooltip details from menu items. This removes attribute lines such as
+     * "When equipped: +3 Armor" and the vanilla "Dyed" line on colored leather items.
+     *
+     * @param itemStack The item to process
+     * @return The same item, with the tooltip details hidden
+     */
+    public static ItemStack hideMenuTooltipDetails(@NotNull ItemStack itemStack) {
+        ItemMeta itemMeta = itemStack.getItemMeta();
+        if (itemMeta == null) return itemStack;
+
+        itemMeta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES, ItemFlag.HIDE_DYE);
+        itemStack.setItemMeta(itemMeta);
+        return itemStack;
     }
 
     /**

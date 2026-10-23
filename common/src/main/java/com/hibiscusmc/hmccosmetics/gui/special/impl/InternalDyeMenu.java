@@ -5,6 +5,7 @@ import com.hibiscusmc.hmccosmetics.config.Settings;
 import com.hibiscusmc.hmccosmetics.cosmetic.Cosmetic;
 import com.hibiscusmc.hmccosmetics.cosmetic.CosmeticHolder;
 import com.hibiscusmc.hmccosmetics.gui.special.DyeMenu;
+import com.hibiscusmc.hmccosmetics.util.HMCCInventoryUtils;
 import com.hibiscusmc.hmccosmetics.util.HMCCServerUtils;
 import dev.triumphteam.gui.builder.gui.ChestGuiBuilder;
 import dev.triumphteam.gui.guis.Gui;
@@ -25,6 +26,7 @@ import org.bukkit.Color;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -224,15 +226,17 @@ public class InternalDyeMenu implements DyeMenu {
 
         final ItemStack dyingItemStack = cosmetic.getItem();
 
-        gui.setItem(INPUT_SLOT, new GuiItem(dyingItemStack.clone()));
+        gui.setItem(INPUT_SLOT, new GuiItem(processMenuItem(viewer, dyingItemStack.clone())));
         ItemStack outputItem = dyingItemStack.clone();
         if (presetColor != null) {
             outputItem = NMSHandlers.getHandler().getUtilHandler().setColor(outputItem, presetColor);
         }
-        gui.setItem(OUTPUT_SLOT, new GuiItem(outputItem));
+        gui.setItem(OUTPUT_SLOT, new GuiItem(processMenuItem(viewer, outputItem)));
 
         if (CUSTOM_COLOR_ENABLED) {
-            ItemStack customColorItem = CUSTOM_COLOR_ITEM != null ? CUSTOM_COLOR_ITEM.clone() : createDefaultCustomColorItem();
+            ItemStack customColorItem = CUSTOM_COLOR_ITEM != null
+                    ? processMenuItem(viewer, CUSTOM_COLOR_ITEM.clone())
+                    : createDefaultCustomColorItem();
             GuiItem customColorGuiItem = new GuiItem(customColorItem);
             customColorGuiItem.setAction(event -> {
                 event.setCancelled(true);
@@ -271,12 +275,13 @@ public class InternalDyeMenu implements DyeMenu {
             if (primaryColorItem == null) continue;
             primaryColorItem = NMSHandlers.getHandler().getUtilHandler().setColor(primaryColorItem, primaryColor.color);
             primaryColorItem.editMeta(itemMeta -> itemMeta.displayName(MiniMessage.miniMessage().deserialize(primaryColor.name()).decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE)));
+            primaryColorItem = processMenuItem(viewer, primaryColorItem);
             GuiItem guiItem = new GuiItem(primaryColorItem);
 
             guiItem.setAction(event -> {
                 event.setCancelled(true);
 
-                ItemStack cosmeticItem = NMSHandlers.getHandler().getUtilHandler().setColor(cosmetic.getItem(), primaryColor.color);
+                ItemStack cosmeticItem = processMenuItem(viewer, NMSHandlers.getHandler().getUtilHandler().setColor(cosmetic.getItem(), primaryColor.color));
                 gui.updateItem(OUTPUT_SLOT, new GuiItem(cosmeticItem));
 
                 List<SecondaryColor> secondaryColors = primaryColor.secondaryColors();
@@ -292,9 +297,10 @@ public class InternalDyeMenu implements DyeMenu {
                     ItemStack secondaryItem = SECONDARY_COLOR_ITEM != null ? SECONDARY_COLOR_ITEM.clone() : cosmetic.getItem();
                     secondaryItem = NMSHandlers.getHandler().getUtilHandler().setColor(secondaryItem, secondaryColor.color);
                     secondaryItem.editMeta(itemMeta -> itemMeta.displayName(MiniMessage.miniMessage().deserialize(secondaryColor.name()).decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE)));
+                    secondaryItem = processMenuItem(viewer, secondaryItem);
                     GuiItem secondaryGuiItem = new GuiItem(secondaryItem);
                     secondaryGuiItem.setAction(secondaryEvent -> {
-                        ItemStack secondaryItemStack = NMSHandlers.getHandler().getUtilHandler().setColor(dyingItemStack.clone(), secondaryColor.color);
+                        ItemStack secondaryItemStack = processMenuItem(viewer, NMSHandlers.getHandler().getUtilHandler().setColor(dyingItemStack.clone(), secondaryColor.color));
                         gui.updateItem(OUTPUT_SLOT, new GuiItem(secondaryItemStack));
                     });
 
@@ -321,6 +327,37 @@ public class InternalDyeMenu implements DyeMenu {
             ));
         });
         return item;
+    }
+
+    /**
+     * Menu items configured through ItemSerializer keep the client's default italic style on
+     * display names and lore. This forces them to be non-italic (and resolves placeholders)
+     * so buttons in the dye menu match the rest of the plugin's menus.
+     */
+    private static ItemStack processMenuItem(@NotNull Player viewer, @NotNull ItemStack item) {
+        ItemMeta itemMeta = item.getItemMeta();
+        if (itemMeta == null) return item;
+
+        if (itemMeta.hasDisplayName()) {
+            String displayName = MiniMessage.miniMessage().serialize(itemMeta.displayName());
+            displayName = Hooks.processPlaceholders(viewer, displayName);
+            itemMeta.displayName(MiniMessage.miniMessage().deserialize(displayName)
+                    .decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE));
+        }
+
+        if (itemMeta.hasLore()) {
+            List<Component> processedLore = new ArrayList<>();
+            for (Component loreLine : itemMeta.lore()) {
+                String loreString = MiniMessage.miniMessage().serialize(loreLine);
+                loreString = Hooks.processPlaceholders(viewer, loreString);
+                processedLore.add(MiniMessage.miniMessage().deserialize(loreString)
+                        .decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE));
+            }
+            itemMeta.lore(processedLore);
+        }
+
+        item.setItemMeta(itemMeta);
+        return HMCCInventoryUtils.hideMenuTooltipDetails(item);
     }
 
     /**

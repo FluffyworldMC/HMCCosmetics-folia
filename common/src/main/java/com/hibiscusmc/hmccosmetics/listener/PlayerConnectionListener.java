@@ -71,6 +71,8 @@ public class PlayerConnectionListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerQuit(@NotNull PlayerQuitEvent event) {
+        Menus.clearCosmeticFilter(event.getPlayer().getUniqueId());
+
         CosmeticUser user = CosmeticUsers.getUser(event.getPlayer());
         if (user == null) return; // Player never initialized, don't do anything
 

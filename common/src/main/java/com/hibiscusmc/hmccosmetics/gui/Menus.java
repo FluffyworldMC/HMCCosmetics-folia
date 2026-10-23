@@ -25,6 +25,7 @@ public class Menus {
 
     private static final HashMap<String, Menu> MENUS = new HashMap<>();
     private static final HashMap<UUID, Long> COOLDOWNS = new HashMap<>();
+    private static final Map<UUID, CosmeticFilterMode> COSMETIC_FILTERS = new java.util.concurrent.ConcurrentHashMap<>();
 
     public static void addMenu(@NotNull Menu menu) {
         MENUS.put(menu.getId().toUpperCase(), menu);
@@ -85,6 +86,25 @@ public class Menus {
         COOLDOWNS.remove(uuid);
     }
 
+    /**
+     * Gets the cosmetic filter selected by a player. Defaults to showing all cosmetics.
+     */
+    public static @NotNull CosmeticFilterMode getCosmeticFilter(@NotNull UUID uuid) {
+        return COSMETIC_FILTERS.getOrDefault(uuid, CosmeticFilterMode.ALL);
+    }
+
+    /**
+     * Cycles the player's cosmetic filter: ALL -> OWNED -> UNOWNED -> ALL.
+     */
+    public static @NotNull CosmeticFilterMode toggleCosmeticFilter(@NotNull UUID uuid) {
+        return COSMETIC_FILTERS.compute(uuid, (key, current) ->
+                (current == null ? CosmeticFilterMode.ALL : current).next());
+    }
+
+    public static void clearCosmeticFilter(@NotNull UUID uuid) {
+        COSMETIC_FILTERS.remove(uuid);
+    }
+
     public static void setup() {
         MENUS.clear();
         COOLDOWNS.clear();
@@ -92,33 +112,59 @@ public class Menus {
         File menusFolder = new File(HMCCosmeticsPlugin.getInstance().getDataFolder() + "/menus");
         if (!menusFolder.exists()) menusFolder.mkdir();
 
+        List<MenuFile> menuFiles = new ArrayList<>();
+
         // Recursive file lookup
         try (Stream<Path> walkStream = Files.walk(menusFolder.toPath())) {
-            walkStream.filter(p -> p.toFile().isFile()).forEach(child -> {
-                if (child.toString().endsWith("yml") || child.toString().endsWith("yaml")) {
-                    if (FILES_TO_IGNORE.contains(child.getFileName().toString())) return;
-                    MessagesUtil.sendDebugMessages("Scanning " + child);
-                    // Loads file
-                    YamlConfigurationLoader loader = YamlConfigurationLoader.builder().path(child).build();
-                    CommentedConfigurationNode root;
-                    try {
-                        root = loader.load();
-                    } catch (ConfigurateException e) {
-                        throw new RuntimeException(e);
-                    }
-                    try {
-                        new Menu(FilenameUtils.removeExtension(child.getFileName().toString()), root);
-                    } catch (Exception e) {
-                        MessagesUtil.sendDebugMessages("Unable to create menu in " + child.getFileName().toString(), Level.WARNING);
-                        if (Settings.isDebugMode()) e.printStackTrace();
-                    }
-                }
-            });
+            walkStream.filter(p -> p.toFile().isFile())
+                    .sorted(Comparator.comparing(Path::toString))
+                    .forEach(child -> {
+                        if (child.toString().endsWith("yml") || child.toString().endsWith("yaml")) {
+                            if (FILES_TO_IGNORE.contains(child.getFileName().toString())) return;
+                            MessagesUtil.sendDebugMessages("Scanning " + child);
+                            // Loads file
+                            YamlConfigurationLoader loader = YamlConfigurationLoader.builder().path(child).build();
+                            CommentedConfigurationNode root;
+                            try {
+                                root = loader.load();
+                            } catch (ConfigurateException e) {
+                                throw new RuntimeException(e);
+                            }
+                            menuFiles.add(new MenuFile(FilenameUtils.removeExtension(child.getFileName().toString()), root));
+                        }
+                    });
         } catch (Exception e) {
             e.printStackTrace();
         }
 
+        // Automatic cosmetic menus are generated first so their virtual page ids are reserved
+        // before any leftover _2/_3 files are considered.
+        Set<String> generatedIds = new HashSet<>();
+        for (MenuFile file : menuFiles) {
+            if (file.root().node(AutoCosmeticMenuGenerator.LAYOUT_NODE).virtual()) continue;
+            generatedIds.addAll(AutoCosmeticMenuGenerator.generate(file.id(), file.root()));
+        }
+
+        for (MenuFile file : menuFiles) {
+            if (!file.root().node(AutoCosmeticMenuGenerator.LAYOUT_NODE).virtual()) continue;
+
+            if (generatedIds.contains(file.id())) {
+                MessagesUtil.sendDebugMessages("Skipping menu " + file.id() + " because an automatic page with the same id was generated. Remove this file if it is an old page.", Level.WARNING);
+                continue;
+            }
+
+            try {
+                new Menu(file.id(), file.root());
+            } catch (Exception e) {
+                MessagesUtil.sendDebugMessages("Unable to create menu in " + file.id(), Level.WARNING);
+                if (Settings.isDebugMode()) e.printStackTrace();
+            }
+        }
+
         refreshPermissions();
+    }
+
+    private record MenuFile(String id, CommentedConfigurationNode root) {
     }
 
     public static void refreshPermissions() {
