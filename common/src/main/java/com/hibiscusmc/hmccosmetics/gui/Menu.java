@@ -197,6 +197,7 @@ public class Menu {
         }
         final Component component = AdventureUtils.MINI_MESSAGE.deserialize(Hooks.processPlaceholders(viewer, this.title));
         Gui gui = Gui.gui()
+                .rows(rows)
                 .title(component)
                 .type(GuiType.CHEST)
                 .inventory((title, owner, type) -> Bukkit.createInventory(owner, rows * 9, title))
