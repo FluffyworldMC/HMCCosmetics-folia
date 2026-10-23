@@ -10,6 +10,30 @@ primary-color-item:
 secondary-color-item:
   material: LEATHER_HORSE_ARMOR
 
+# A button that opens a dialog where the player can type a custom hex color.
+# Requires Paper 1.21.7+ (Dialogs). On older servers the button is not shown.
+custom-color:
+  enabled: true
+  # The slot the button is placed in. This must not overlap the primary ($), secondary (%), input or output slots.
+  slot: 31
+  # Permission needed to open the color input. Leave blank to allow everyone.
+  permission: "hmccosmetics.dye.custom-color"
+  item:
+    material: NAME_TAG
+    name: "<#45CDE9>Custom Color"
+    lore:
+      - "<gray>Click to type a hex color"
+      - "<gray>Example: <white>#FF00AA"
+  dialog:
+    title: "<#45CDE9>Custom Color"
+    label: "<gray>Hex color (e.g. #FF00AA)"
+    confirm: "<green>Confirm"
+    cancel: "<red>Cancel"
+    # The value pre-filled in the input box.
+    initial: "#FFFFFF"
+    # The maximum amount of characters that can be typed (7 = #RRGGBB).
+    max-length: 7
+
 # $ = Primary Colors
 # % = Secondary Colors
 format:

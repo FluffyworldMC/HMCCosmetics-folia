@@ -12,7 +12,7 @@ import dev.triumphteam.gui.guis.GuiItem;
 import me.lojosho.hibiscuscommons.config.serializer.ItemSerializer;
 import me.lojosho.hibiscuscommons.hooks.Hooks;
 import me.lojosho.hibiscuscommons.nms.NMSHandlers;
-import me.lojosho.hibiscuscommons.util.MessagesUtil;
+import com.hibiscusmc.hmccosmetics.util.MessagesUtil;
 import me.lojosho.shaded.configurate.CommentedConfigurationNode;
 import me.lojosho.shaded.configurate.ConfigurateException;
 import me.lojosho.shaded.configurate.ConfigurationNode;
@@ -50,6 +50,32 @@ public class InternalDyeMenu implements DyeMenu {
     private @Nullable ItemStack PRIMARY_COLOR_ITEM = null;
     private @Nullable ItemStack SECONDARY_COLOR_ITEM = null;
 
+    private boolean CUSTOM_COLOR_ENABLED = true;
+    private int CUSTOM_COLOR_SLOT = 31;
+    private String CUSTOM_COLOR_PERMISSION = "hmccosmetics.dye.custom-color";
+    private @Nullable ItemStack CUSTOM_COLOR_ITEM = null;
+    private String CUSTOM_COLOR_DIALOG_TITLE = "<#45CDE9>Custom Color";
+    private String CUSTOM_COLOR_DIALOG_LABEL = "<gray>Hex color (e.g. #FF00AA)";
+    private String CUSTOM_COLOR_DIALOG_CONFIRM = "<green>Confirm";
+    private String CUSTOM_COLOR_DIALOG_CANCEL = "<red>Cancel";
+    private String CUSTOM_COLOR_DIALOG_INITIAL = "#FFFFFF";
+    private int CUSTOM_COLOR_DIALOG_MAX_LENGTH = 7;
+
+    /**
+     * Whether the running server exposes the Paper dialog API. Checked before any of the
+     * dialog classes are touched so the plugin still loads on servers older than 1.21.7.
+     */
+    private static final boolean DIALOG_SUPPORTED = isDialogSupported();
+
+    private static boolean isDialogSupported() {
+        try {
+            Class.forName("io.papermc.paper.dialog.Dialog", false, InternalDyeMenu.class.getClassLoader());
+            return true;
+        } catch (ClassNotFoundException | LinkageError ignored) {
+            return false;
+        }
+    }
+
     @Override
     public void reload() {
         YamlConfigurationLoader loader = YamlConfigurationLoader.builder().path(Path.of(HMCCosmeticsPlugin.getInstance().getDataFolder() + "/menus/functional/internal_dye_menu.yml")).build();
@@ -80,7 +106,7 @@ public class InternalDyeMenu implements DyeMenu {
 
         PRIMARY_COLORS_SLOTS.clear();
         SECONDARY_COLORS_SLOTS.clear();
-        for (int i = 0; i < (ROWS * 9) - 1; i++) {
+        for (int i = 0; i < (ROWS * 9); i++) {
             char character = formatString.charAt(i);
             switch (character) {
                 case '$' -> PRIMARY_COLORS_SLOTS.add(i);
@@ -115,10 +141,67 @@ public class InternalDyeMenu implements DyeMenu {
 
         INPUT_SLOT = Settings.getDyeMenuInputSlot();
         OUTPUT_SLOT = Settings.getDyeMenuOutputSlot();
+
+        loadCustomColorSettings(config.node("custom-color"));
+        validateCustomColorSettings();
+    }
+
+    private void loadCustomColorSettings(@NotNull ConfigurationNode customColorNode) {
+        CUSTOM_COLOR_ENABLED = customColorNode.node("enabled").getBoolean(true);
+        CUSTOM_COLOR_SLOT = customColorNode.node("slot").getInt(31);
+        CUSTOM_COLOR_PERMISSION = customColorNode.node("permission").getString("hmccosmetics.dye.custom-color");
+
+        CUSTOM_COLOR_ITEM = null;
+        if (!customColorNode.node("item").virtual()) {
+            try {
+                ItemStack item = ItemSerializer.INSTANCE.deserialize(ItemStack.class, customColorNode.node("item"));
+                if (item != null && item.getType() != Material.AIR) {
+                    CUSTOM_COLOR_ITEM = item;
+                }
+            } catch (SerializationException e) {
+                e.printStackTrace();
+            }
+        }
+
+        ConfigurationNode dialogNode = customColorNode.node("dialog");
+        CUSTOM_COLOR_DIALOG_TITLE = dialogNode.node("title").getString(CUSTOM_COLOR_DIALOG_TITLE);
+        CUSTOM_COLOR_DIALOG_LABEL = dialogNode.node("label").getString(CUSTOM_COLOR_DIALOG_LABEL);
+        CUSTOM_COLOR_DIALOG_CONFIRM = dialogNode.node("confirm").getString(CUSTOM_COLOR_DIALOG_CONFIRM);
+        CUSTOM_COLOR_DIALOG_CANCEL = dialogNode.node("cancel").getString(CUSTOM_COLOR_DIALOG_CANCEL);
+        CUSTOM_COLOR_DIALOG_INITIAL = dialogNode.node("initial").getString(CUSTOM_COLOR_DIALOG_INITIAL);
+        CUSTOM_COLOR_DIALOG_MAX_LENGTH = Math.max(7, dialogNode.node("max-length").getInt(7));
+    }
+
+    private void validateCustomColorSettings() {
+        if (!CUSTOM_COLOR_ENABLED) return;
+
+        if (!DIALOG_SUPPORTED) {
+            CUSTOM_COLOR_ENABLED = false;
+            MessagesUtil.sendDebugMessages("Dialogs are not available on this server version, so the custom color button has been disabled.", Level.WARNING);
+            return;
+        }
+
+        if (CUSTOM_COLOR_SLOT < 0 || CUSTOM_COLOR_SLOT >= ROWS * 9) {
+            CUSTOM_COLOR_ENABLED = false;
+            MessagesUtil.sendDebugMessages("Custom color slot " + CUSTOM_COLOR_SLOT + " is outside of the menu, so the custom color button has been disabled.", Level.WARNING);
+            return;
+        }
+
+        if (PRIMARY_COLORS_SLOTS.contains(CUSTOM_COLOR_SLOT)
+                || SECONDARY_COLORS_SLOTS.contains(CUSTOM_COLOR_SLOT)
+                || CUSTOM_COLOR_SLOT == INPUT_SLOT
+                || CUSTOM_COLOR_SLOT == OUTPUT_SLOT) {
+            CUSTOM_COLOR_ENABLED = false;
+            MessagesUtil.sendDebugMessages("Custom color slot " + CUSTOM_COLOR_SLOT + " overlaps another menu item, so the custom color button has been disabled.", Level.WARNING);
+        }
     }
 
     @Override
     public void openMenu(@NotNull Player viewer, @NotNull CosmeticHolder cosmeticHolder, @NotNull Cosmetic cosmetic) {
+        openMenu(viewer, cosmeticHolder, cosmetic, null);
+    }
+
+    private void openMenu(@NotNull Player viewer, @NotNull CosmeticHolder cosmeticHolder, @NotNull Cosmetic cosmetic, @Nullable Color presetColor) {
         if (ROWS == 0 || ROWS >= 7) {
             MessagesUtil.sendDebugMessages("Internal Dye Menu formatting is not returning the correct amount of rows (Rows found: " + ROWS + "). Check your internal dye menu config.", Level.WARNING);
             cosmeticHolder.addCosmetic(cosmetic);
@@ -141,8 +224,39 @@ public class InternalDyeMenu implements DyeMenu {
 
         final ItemStack dyingItemStack = cosmetic.getItem();
 
-        gui.setItem(INPUT_SLOT, new GuiItem(dyingItemStack));
-        gui.setItem(OUTPUT_SLOT, new GuiItem(dyingItemStack));
+        gui.setItem(INPUT_SLOT, new GuiItem(dyingItemStack.clone()));
+        ItemStack outputItem = dyingItemStack.clone();
+        if (presetColor != null) {
+            outputItem = NMSHandlers.getHandler().getUtilHandler().setColor(outputItem, presetColor);
+        }
+        gui.setItem(OUTPUT_SLOT, new GuiItem(outputItem));
+
+        if (CUSTOM_COLOR_ENABLED) {
+            ItemStack customColorItem = CUSTOM_COLOR_ITEM != null ? CUSTOM_COLOR_ITEM.clone() : createDefaultCustomColorItem();
+            GuiItem customColorGuiItem = new GuiItem(customColorItem);
+            customColorGuiItem.setAction(event -> {
+                event.setCancelled(true);
+
+                if (!CUSTOM_COLOR_PERMISSION.isBlank()
+                        && !viewer.hasPermission(CUSTOM_COLOR_PERMISSION)
+                        && !viewer.isOp()) {
+                    MessagesUtil.sendMessage(viewer, "no-permission");
+                    return;
+                }
+
+                CustomColorDialog.open(
+                        viewer,
+                        CUSTOM_COLOR_DIALOG_TITLE,
+                        CUSTOM_COLOR_DIALOG_LABEL,
+                        CUSTOM_COLOR_DIALOG_CONFIRM,
+                        CUSTOM_COLOR_DIALOG_CANCEL,
+                        CUSTOM_COLOR_DIALOG_INITIAL,
+                        CUSTOM_COLOR_DIALOG_MAX_LENGTH,
+                        color -> openMenu(viewer, cosmeticHolder, cosmetic, color)
+                );
+            });
+            gui.setItem(CUSTOM_COLOR_SLOT, customColorGuiItem);
+        }
 
         AtomicInteger ran = new AtomicInteger(0);
         for (Integer i : PRIMARY_COLORS_SLOTS) {
@@ -192,6 +306,21 @@ public class InternalDyeMenu implements DyeMenu {
 
 
         gui.open(viewer);
+    }
+
+    private static ItemStack createDefaultCustomColorItem() {
+        ItemStack item = new ItemStack(Material.NAME_TAG);
+        item.editMeta(itemMeta -> {
+            itemMeta.displayName(MiniMessage.miniMessage().deserialize("<#45CDE9>Custom Color")
+                    .decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE));
+            itemMeta.lore(List.of(
+                    MiniMessage.miniMessage().deserialize("<gray>Click to type a hex color")
+                            .decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE),
+                    MiniMessage.miniMessage().deserialize("<gray>Example: <white>#FF00AA")
+                            .decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE)
+            ));
+        });
+        return item;
     }
 
     /**

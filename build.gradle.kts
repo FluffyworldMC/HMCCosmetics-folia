@@ -112,7 +112,7 @@ bukkit {
             "cmd.reload", "cmd.apply.other", "cmd.unapply.other", "cmd.hide", "cmd.show", "cmd.toggle",
             "cmd.hide.other", "cmd.show.other", "cmd.toggle.other", "cmd.wardrobe.other", "cmd.menu.other",
             "cmd.debug", "unapplydeath.bypass", "cmd.disableall", "cmd.hiddenreasons", "cmd.clearhiddenreasons",
-            "cmd.hiddenreasons.other", "cmd.clearhiddenreasons.other"
+            "cmd.hiddenreasons.other", "cmd.clearhiddenreasons.other", "dye.custom-color"
         )
 
         for (node in everyone) register("hmccosmetics.$node") { default = Default.TRUE }
