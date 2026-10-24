@@ -1,12 +1,12 @@
 package com.hibiscusmc.hmccosmetics.user.manager;
 
+import com.github.Anon8281.universalScheduler.scheduling.schedulers.TaskScheduler;
 import com.hibiscusmc.hmccosmetics.HMCCosmeticsPlugin;
 import com.hibiscusmc.hmccosmetics.util.HMCCServerUtils;
 import com.hibiscusmc.hmccosmetics.config.Settings;
 import com.hibiscusmc.hmccosmetics.cosmetic.types.CosmeticBalloonType;
 import com.hibiscusmc.hmccosmetics.user.CosmeticUser;
 import com.hibiscusmc.hmccosmetics.user.CosmeticUsers;
-import com.hibiscusmc.hmccosmetics.util.HMCCServerUtils;
 import com.hibiscusmc.hmccosmetics.util.MessagesUtil;
 import com.hibiscusmc.hmccosmetics.util.packets.HMCCPacketManager;
 import com.ticxo.modelengine.api.ModelEngineAPI;
@@ -22,9 +22,11 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.util.Vector;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.UUID;
@@ -39,9 +41,15 @@ public class UserBalloonManager {
     @Getter
     private UserBalloonPufferfish pufferfish;
     private final ArmorStand modelEntity;
+    /**
+     * Last known balloon location. Reading {@link #modelEntity}'s location is only legal on the
+     * region thread that owns it, so callers read this cache instead.
+     */
+    private Location location;
 
     public UserBalloonManager(CosmeticUser user, @NotNull Location location) {
         this.user = user;
+        this.location = location.clone();
         this.pufferfish = new UserBalloonPufferfish(user.getUniqueId(), NMSHandlers.getHandler().getUtilHandler().getNextEntityId(location.getWorld()), UUID.randomUUID());
         this.modelEntity = location.getWorld().spawn(location, ArmorStand.class, (e) -> {
             e.setInvisible(true);
@@ -108,20 +116,56 @@ public class UserBalloonManager {
         if (user.getPlayer() != null && user.isInWardrobe()) pufferfish.destroyPufferfish(List.of(user.getPlayer()));
         else pufferfish.destroyPufferfish();
 
-        if (balloonType == BalloonType.MODELENGINE) {
-            final ModeledEntity entity = ModelEngineAPI.getModeledEntity(modelEntity);
-            if (entity == null) {
-                MessagesUtil.sendDebugMessages("Balloon Removal Failed - Model Entity is Null");
-                return;
+        final Entity entity = this.modelEntity;
+        final BalloonType type = this.balloonType;
+        this.cosmeticBalloonType = null;
+
+        final Runnable removal = () -> {
+            if (type == BalloonType.MODELENGINE) {
+                final ModeledEntity modeledEntity = ModelEngineAPI.getModeledEntity(entity);
+                if (modeledEntity == null) {
+                    MessagesUtil.sendDebugMessages("Balloon Removal Failed - Model Entity is Null");
+                } else {
+                    modeledEntity.destroy();
+                    MessagesUtil.sendDebugMessages("Balloon Model Engine Removal");
+                }
             }
 
-            entity.destroy();
-            MessagesUtil.sendDebugMessages("Balloon Model Engine Removal");
-        }
+            entity.remove();
+            MessagesUtil.sendDebugMessages("Balloon Entity Removed");
+        };
 
-        modelEntity.remove();
-        cosmeticBalloonType = null;
-        MessagesUtil.sendDebugMessages("Balloon Entity Removed");
+        // The balloon follows the player through async teleports, so it can briefly be owned by a
+        // different region than the one running this code. Entity state may only be touched on the
+        // region that owns it, otherwise Folia throws a thread ownership exception.
+        final TaskScheduler scheduler = HMCCosmeticsPlugin.getScheduler();
+        if (scheduler.isEntityThread(entity)) {
+            removal.run();
+        } else {
+            scheduler.runTask(entity, removal);
+        }
+    }
+
+    /**
+     * Updates the model entity's helmet on the region thread that owns it.
+     *
+     * @param item the item to show, or {@code null} to clear the equipment
+     */
+    private void setHelmet(@Nullable ItemStack item) {
+        final Runnable update = () -> {
+            if (item == null) {
+                modelEntity.getEquipment().clear();
+            } else {
+                modelEntity.getEquipment().setHelmet(item);
+            }
+        };
+
+        final TaskScheduler scheduler = HMCCosmeticsPlugin.getScheduler();
+        if (scheduler.isEntityThread(modelEntity)) {
+            update.run();
+        } else {
+            scheduler.runTask(modelEntity, update);
+        }
     }
 
     public void addPlayerToModel(final CosmeticUser user, final CosmeticBalloonType cosmeticBalloonType) {
@@ -141,7 +185,7 @@ public class UserBalloonManager {
             return;
         }
         if (balloonType == BalloonType.ITEM) {
-            modelEntity.getEquipment().setHelmet(user.getUserCosmeticItem(cosmeticBalloonType));
+            setHelmet(user.getUserCosmeticItem(cosmeticBalloonType));
         }
     }
     public void removePlayerFromModel(final Player viewer) {
@@ -153,7 +197,7 @@ public class UserBalloonManager {
             return;
         }
         if (balloonType == BalloonType.ITEM) {
-            modelEntity.getEquipment().clear();
+            setHelmet(null);
             return;
         }
     }
@@ -180,10 +224,11 @@ public class UserBalloonManager {
     }
 
     public Location getLocation() {
-        return this.getModelEntity().getLocation();
+        return this.location;
     }
 
     public void setLocation(Location location) {
+        this.location = location.clone();
         HMCCServerUtils.teleport(this.getModelEntity(), location);
     }
 
