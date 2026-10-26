@@ -1,0 +1,356 @@
+# ============================================================================
+# HMCCosmetics - Advanced Palette Dye Menu (ArtMap style)
+# ============================================================================
+# This menu is opened by the "Custom Color" button in
+# menus/functional/internal_dye_menu.yml.
+#
+# It is a paginated palette. By default it uses 6 rows:
+#
+#   Row 1 (slots 0-8)  : [<] [ ] [ ] [ ] [Custom] [ ] [ ] [ ] [>]
+#   Row 2 (slots 9-17) : [ ] [Input] [ ] [ ] [ ] [ ] [ ] [Output] [ ]
+#   Row 3-6 (18-53)    : 36 color slots
+#
+# The input/output/custom/navigation slots can all be changed under "menu" and
+# "custom-color" below.
+#
+# Every palette entry is generated from "base-colors" and "shades". With the
+# default 4 shades, the 72 colors below become 288 palette entries (8 pages).
+#
+# Supported placeholders (MiniMessage is supported everywhere):
+#   Palette items: {color_name} {shade_name} {shade} {hex} {hex_code} {color}
+#                  {page} {pages}
+#   Navigation:    {page} {pages} {target_page}
+#   Title:         {page} {pages} {target_page} (title is set in config.yml,
+#                  under dye-menu.title)
+#
+# {hex}      -> FF0000
+# {hex_code} -> #FF0000
+# {color}    -> #FF0000 (alias of {hex_code})
+# {shade}    -> 0, 1, 2, ...
+#
+# Item sections (color-item, previous-item, next-item, filler, custom-color.item)
+# accept resource pack model keys:
+#   model-data: 10396                     <- integer CustomModelData
+#   model-id: "my_items:color_swatch"     <- string item model (1.21.4+)
+# ============================================================================
+
+menu:
+  # 1 to 6 rows.
+  rows: 6
+  # Slots for the cosmetic being dyed (input) and the preview (output).
+  # Remove these two lines to fall back to dye-menu.input-slot / output-slot
+  # in config.yml.
+  input-slot: 10
+  output-slot: 16
+  # First slot used by the palette. Colors fill consecutive slots from here.
+  color-start-slot: 18
+  # How many colors are shown per page.
+  color-page-size: 36
+  # Navigation buttons. Set a slot to -1 to hide it.
+  previous-slot: 0
+  next-slot: 8
+
+  previous-item:
+    material: MAGENTA_GLAZED_TERRACOTTA
+    name: "<red><bold><<</bold>"
+    lore:
+      - "<gray>Page {target_page}/{pages}"
+  next-item:
+    material: MAGENTA_GLAZED_TERRACOTTA
+    name: "<green><bold>>></bold>"
+    lore:
+      - "<gray>Page {target_page}/{pages}"
+  previous-disabled:
+    material: GRAY_STAINED_GLASS_PANE
+    name: " "
+  next-disabled:
+    material: GRAY_STAINED_GLASS_PANE
+    name: " "
+  # Optional item used to fill the empty palette slots. Remove this section to
+  # leave the slots empty instead. Use material: AIR to do the same.
+  filler:
+    material: GRAY_STAINED_GLASS_PANE
+    name: " "
+
+# The template used for every color entry. If material is not provided (or is
+# AIR), the cosmetic being dyed is used as the palette icon instead. Hook items
+# work too, e.g. "material: nexo:paintbrush" or "material: itemsadder:hmccosmetics:paintbrush".
+#
+# Resource pack model:
+#   model-data: 10396                        <- integer CustomModelData
+#   model-id: "my_items:color_swatch"        <- string item model (1.21.4+)
+color-item:
+  material: LEATHER_HORSE_ARMOR
+  # model-data: 10396
+  name: "<#{hex}>{color_name} {shade_name}"
+  lore:
+    - "<gray>Hex: <white>#{hex}"
+    - "<gray>Shade: <white>{shade_name}"
+    - "<gray>Click to preview"
+
+# Shades generated for every base color. The RGB value is multiplied by the
+# factor and clamped to 0-255, exactly like ArtMap does.
+# Remove this section to use these defaults.
+shades:
+  - name: "Dark"
+    factor: 0.55
+  - name: "Dim"
+    factor: 0.75
+  - name: "Base"
+    factor: 1.0
+  - name: "Light"
+    factor: 1.25
+
+# Base colors, in the order they are shown in the menu.
+# Each base color generates one entry per shade.
+# The name is plain text; the color-item template above tints it with {hex}.
+base-colors:
+  red:
+    name: "Red"
+    color: "#FF0000"
+  crimson:
+    name: "Crimson"
+    color: "#DC143C"
+  scarlet:
+    name: "Scarlet"
+    color: "#FF2400"
+  ruby:
+    name: "Ruby"
+    color: "#E0115F"
+  cherry:
+    name: "Cherry"
+    color: "#DE3163"
+  rose:
+    name: "Rose"
+    color: "#FF007F"
+  burgundy:
+    name: "Burgundy"
+    color: "#800020"
+  maroon:
+    name: "Maroon"
+    color: "#800000"
+
+  blue:
+    name: "Blue"
+    color: "#0000FF"
+  navy:
+    name: "Navy"
+    color: "#000080"
+  azure:
+    name: "Azure"
+    color: "#007FFF"
+  cobalt:
+    name: "Cobalt"
+    color: "#0047AB"
+  sapphire:
+    name: "Sapphire"
+    color: "#0F52BA"
+  cerulean:
+    name: "Cerulean"
+    color: "#007BA7"
+  indigo:
+    name: "Indigo"
+    color: "#4B0082"
+  prussian:
+    name: "Prussian"
+    color: "#003153"
+
+  green:
+    name: "Green"
+    color: "#00FF00"
+  emerald:
+    name: "Emerald"
+    color: "#50C878"
+  jade:
+    name: "Jade"
+    color: "#00A86B"
+  forest:
+    name: "Forest"
+    color: "#228B22"
+  lime:
+    name: "Lime"
+    color: "#BFFF00"
+  olive:
+    name: "Olive"
+    color: "#808000"
+  sage:
+    name: "Sage"
+    color: "#BCB88A"
+  mint:
+    name: "Mint"
+    color: "#98FF98"
+
+  yellow:
+    name: "Yellow"
+    color: "#FFFF00"
+  gold:
+    name: "Gold"
+    color: "#FFD700"
+  amber:
+    name: "Amber"
+    color: "#FFBF00"
+  canary:
+    name: "Canary"
+    color: "#FFFF99"
+  lemon:
+    name: "Lemon"
+    color: "#FFF700"
+  mustard:
+    name: "Mustard"
+    color: "#FFDB58"
+  saffron:
+    name: "Saffron"
+    color: "#F4C430"
+  butter:
+    name: "Butter"
+    color: "#FFF18C"
+
+  orange:
+    name: "Orange"
+    color: "#FFA500"
+  tangerine:
+    name: "Tangerine"
+    color: "#F28500"
+  coral:
+    name: "Coral"
+    color: "#FF7F50"
+  peach:
+    name: "Peach"
+    color: "#FFDAB9"
+  apricot:
+    name: "Apricot"
+    color: "#FBCEB1"
+  rust:
+    name: "Rust"
+    color: "#B7410E"
+  copper:
+    name: "Copper"
+    color: "#B87333"
+  bronze:
+    name: "Bronze"
+    color: "#CD7F32"
+
+  purple:
+    name: "Purple"
+    color: "#800080"
+  violet:
+    name: "Violet"
+    color: "#8A2BE2"
+  lavender:
+    name: "Lavender"
+    color: "#E6E6FA"
+  plum:
+    name: "Plum"
+    color: "#DDA0DD"
+  amethyst:
+    name: "Amethyst"
+    color: "#9966CC"
+  mauve:
+    name: "Mauve"
+    color: "#E0B0FF"
+  orchid:
+    name: "Orchid"
+    color: "#DA70D6"
+  lilac:
+    name: "Lilac"
+    color: "#C8A2C8"
+
+  white:
+    name: "White"
+    color: "#FFFFFF"
+  ivory:
+    name: "Ivory"
+    color: "#FFFFF0"
+  pearl:
+    name: "Pearl"
+    color: "#F0EAD6"
+  cream:
+    name: "Cream"
+    color: "#FFFDD0"
+  snow:
+    name: "Snow"
+    color: "#FFFAFA"
+  vanilla:
+    name: "Vanilla"
+    color: "#F3E5AB"
+  alabaster:
+    name: "Alabaster"
+    color: "#F0EAD6"
+  bone:
+    name: "Bone"
+    color: "#E3DAC9"
+
+  black:
+    name: "Black"
+    color: "#000000"
+  charcoal:
+    name: "Charcoal"
+    color: "#36454F"
+  ebony:
+    name: "Ebony"
+    color: "#555D50"
+  onyx:
+    name: "Onyx"
+    color: "#353839"
+  jet:
+    name: "Jet"
+    color: "#343434"
+  obsidian:
+    name: "Obsidian"
+    color: "#3C3C44"
+  slate:
+    name: "Slate"
+    color: "#708090"
+  graphite:
+    name: "Graphite"
+    color: "#424242"
+
+  gray:
+    name: "Gray"
+    color: "#808080"
+  silver:
+    name: "Silver"
+    color: "#C0C0C0"
+  ash:
+    name: "Ash"
+    color: "#B2BEB5"
+  smoke:
+    name: "Smoke"
+    color: "#738276"
+  steel:
+    name: "Steel"
+    color: "#B0C4DE"
+  pewter:
+    name: "Pewter"
+    color: "#96A8A1"
+  dove:
+    name: "Dove"
+    color: "#B7B7B7"
+  taupe:
+    name: "Taupe"
+    color: "#483C32"
+
+# A button that opens a dialog where the player can type a custom hex color.
+# Requires Paper 1.21.7+ (Dialogs). On older servers the button is not shown.
+custom-color:
+  enabled: true
+  # The slot the button is placed in. This must not overlap the palette,
+  # input, output, or navigation slots.
+  slot: 4
+  # Permission needed to open the color input. Leave blank to allow everyone.
+  permission: "hmccosmetics.dye.custom-color"
+  item:
+    material: NAME_TAG
+    name: "<#45CDE9>Custom Color"
+    lore:
+      - "<gray>Click to type a hex color"
+      - "<gray>Example: <white>#FF00AA"
+  dialog:
+    title: "<#45CDE9>Custom Color"
+    label: "<gray>Hex color (e.g. #FF00AA)"
+    confirm: "<green>Confirm"
+    cancel: "<red>Cancel"
+    # The value pre-filled in the input box.
+    initial: "#FFFFFF"
+    # The maximum amount of characters that can be typed (7 = #RRGGBB).
+    max-length: 7

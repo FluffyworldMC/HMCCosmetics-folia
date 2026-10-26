@@ -91,6 +91,9 @@ public final class HMCCosmeticsPlugin extends HibiscusPlugin {
         if (!Path.of(getDataFolder().getPath() + "/menus/functional/internal_dye_menu.yml").toFile().exists()) {
             saveResource("menus/functional/internal_dye_menu.yml", false);
         }
+        if (!Path.of(getDataFolder().getPath() + "/menus/functional/palette_dye_menu.yml").toFile().exists()) {
+            saveResource("menus/functional/palette_dye_menu.yml", false);
+        }
         if (!Path.of(getDataFolder().getPath() + "/wardrobes/").toFile().exists()) {
             saveResource("wardrobes/defaultwardrobe.yml", false);
             WardrobeMigration.migrate(this);

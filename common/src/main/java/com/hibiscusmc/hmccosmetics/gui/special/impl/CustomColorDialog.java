@@ -27,7 +27,7 @@ import java.util.regex.Pattern;
  * Builds the Paper dialog used to enter a custom hex color.
  * <p>
  * This class references the dialog API directly, so it is only loaded when
- * {@link InternalDyeMenu} has verified that the running server supports dialogs.
+ * {@link PaletteDyeMenu} has verified that the running server supports dialogs.
  */
 public final class CustomColorDialog {
 

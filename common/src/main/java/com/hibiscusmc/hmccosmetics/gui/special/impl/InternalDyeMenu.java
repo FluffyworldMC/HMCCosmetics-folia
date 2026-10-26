@@ -7,13 +7,13 @@ import com.hibiscusmc.hmccosmetics.cosmetic.CosmeticHolder;
 import com.hibiscusmc.hmccosmetics.gui.special.DyeMenu;
 import com.hibiscusmc.hmccosmetics.util.HMCCInventoryUtils;
 import com.hibiscusmc.hmccosmetics.util.HMCCServerUtils;
-import com.hibiscusmc.hmccosmetics.util.MessagesUtil;
 import dev.triumphteam.gui.builder.gui.ChestGuiBuilder;
 import dev.triumphteam.gui.guis.Gui;
 import dev.triumphteam.gui.guis.GuiItem;
 import me.lojosho.hibiscuscommons.config.serializer.ItemSerializer;
 import me.lojosho.hibiscuscommons.hooks.Hooks;
 import me.lojosho.hibiscuscommons.nms.NMSHandlers;
+import com.hibiscusmc.hmccosmetics.util.MessagesUtil;
 import me.lojosho.shaded.configurate.CommentedConfigurationNode;
 import me.lojosho.shaded.configurate.ConfigurateException;
 import me.lojosho.shaded.configurate.ConfigurationNode;
@@ -32,90 +32,83 @@ import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 
 public class InternalDyeMenu implements DyeMenu {
 
-    private static final int MAX_ROWS = 6;
-    private static final int ROW_SIZE = 9;
-
-    private static final String DEFAULT_COLOR_NAME = "<#{hex}>{color_name} {shade_name}";
-    private static final List<String> DEFAULT_COLOR_LORE = List.of(
-            "<gray>Hex: <white>#{hex}",
-            "<gray>Shade: <white>{shade_name}",
-            "<gray>Click to preview"
+    private static final List<String> DEFAULT_FORMAT = List.of(
+            "###$$$###",
+            "###$$$###",
+            "###$$$###",
+            "#########",
+            "#%%%%%%%#",
+            "#%%%%%%%#"
     );
 
-    private static final List<DefaultColor> DEFAULT_BASE_COLORS = List.of(
-            new DefaultColor("Red", "FF0000"),
-            new DefaultColor("Orange", "FFA500"),
-            new DefaultColor("Yellow", "FFFF00"),
-            new DefaultColor("Lime", "BFFF00"),
-            new DefaultColor("Green", "00A86B"),
-            new DefaultColor("Cyan", "00CED1"),
-            new DefaultColor("Blue", "0000FF"),
-            new DefaultColor("Purple", "800080"),
-            new DefaultColor("White", "FFFFFF"),
-            new DefaultColor("Gray", "808080"),
-            new DefaultColor("Black", "000000"),
-            new DefaultColor("Brown", "8B4513")
+    private static final List<PrimaryColor> DEFAULT_PRIMARY_COLORS = List.of(
+            new PrimaryColor("Red", Color.fromRGB(0xFF0000), List.of(
+                    new SecondaryColor("Crimson", Color.fromRGB(0xDC143C)),
+                    new SecondaryColor("Scarlet", Color.fromRGB(0xFF2400)),
+                    new SecondaryColor("Ruby", Color.fromRGB(0xE0115F)))),
+            new PrimaryColor("Blue", Color.fromRGB(0x0000FF), List.of(
+                    new SecondaryColor("Navy", Color.fromRGB(0x000080)),
+                    new SecondaryColor("Azure", Color.fromRGB(0x007FFF)),
+                    new SecondaryColor("Cobalt", Color.fromRGB(0x0047AB)))),
+            new PrimaryColor("Green", Color.fromRGB(0x00FF00), List.of(
+                    new SecondaryColor("Emerald", Color.fromRGB(0x50C878)),
+                    new SecondaryColor("Jade", Color.fromRGB(0x00A86B)),
+                    new SecondaryColor("Forest", Color.fromRGB(0x228B22)))),
+            new PrimaryColor("Yellow", Color.fromRGB(0xFFFF00), List.of(
+                    new SecondaryColor("Gold", Color.fromRGB(0xFFD700)),
+                    new SecondaryColor("Amber", Color.fromRGB(0xFFBF00)),
+                    new SecondaryColor("Lemon", Color.fromRGB(0xFFF700)))),
+            new PrimaryColor("Orange", Color.fromRGB(0xFFA500), List.of(
+                    new SecondaryColor("Tangerine", Color.fromRGB(0xF28500)),
+                    new SecondaryColor("Coral", Color.fromRGB(0xFF7F50)),
+                    new SecondaryColor("Rust", Color.fromRGB(0xB7410E)))),
+            new PrimaryColor("Purple", Color.fromRGB(0x800080), List.of(
+                    new SecondaryColor("Violet", Color.fromRGB(0x8A2BE2)),
+                    new SecondaryColor("Plum", Color.fromRGB(0xDDA0DD)),
+                    new SecondaryColor("Orchid", Color.fromRGB(0xDA70D6)))),
+            new PrimaryColor("White", Color.fromRGB(0xFFFFFF), List.of(
+                    new SecondaryColor("Ivory", Color.fromRGB(0xFFFFF0)),
+                    new SecondaryColor("Pearl", Color.fromRGB(0xF0EAD6)),
+                    new SecondaryColor("Snow", Color.fromRGB(0xFFFAFA)))),
+            new PrimaryColor("Black", Color.fromRGB(0x000000), List.of(
+                    new SecondaryColor("Charcoal", Color.fromRGB(0x36454F)),
+                    new SecondaryColor("Onyx", Color.fromRGB(0x353839)),
+                    new SecondaryColor("Slate", Color.fromRGB(0x708090)))),
+            new PrimaryColor("Gray", Color.fromRGB(0x808080), List.of(
+                    new SecondaryColor("Silver", Color.fromRGB(0xC0C0C0)),
+                    new SecondaryColor("Ash", Color.fromRGB(0xB2BEB5)),
+                    new SecondaryColor("Steel", Color.fromRGB(0xB0C4DE))))
     );
 
-    private List<PaletteColor> COLORS = List.of();
-    private final List<Shade> SHADES = new ArrayList<>();
-    private final List<Integer> PALETTE_SLOTS = new ArrayList<>();
+    private List<PrimaryColor> PRIMARY_COLORS;
 
-    private int ROWS = 6;
-    private int COLOR_START_SLOT = 18;
-    private int CONFIGURED_PAGE_SIZE = 36;
-    private int PREVIOUS_SLOT = 0;
-    private int NEXT_SLOT = 8;
+    private List<String> FORMAT = List.of();
+    private int ROWS;
+    private final ArrayList<Integer> PRIMARY_COLORS_SLOTS = new ArrayList<>();
+    private final ArrayList<Integer> SECONDARY_COLORS_SLOTS = new ArrayList<>();
 
     private int INPUT_SLOT;
     private int OUTPUT_SLOT;
 
-    private boolean TITLE_HAS_PAGE_PLACEHOLDER = false;
-
-    private @Nullable ItemStack PREVIOUS_ITEM = null;
-    private @Nullable ItemStack NEXT_ITEM = null;
-    private @Nullable ItemStack PREVIOUS_DISABLED_ITEM = null;
-    private @Nullable ItemStack NEXT_DISABLED_ITEM = null;
-    private @Nullable ItemStack FILLER_ITEM = null;
-
-    private @Nullable ItemStack COLOR_ITEM = null;
-    private @Nullable String COLOR_NAME_TEMPLATE = null;
-    private @Nullable List<String> COLOR_LORE_TEMPLATE = null;
+    private @Nullable ItemStack PRIMARY_COLOR_ITEM = null;
+    private @Nullable ItemStack SECONDARY_COLOR_ITEM = null;
 
     private boolean CUSTOM_COLOR_ENABLED = true;
-    private int CUSTOM_COLOR_SLOT = 4;
+    private int CUSTOM_COLOR_SLOT = 31;
     private String CUSTOM_COLOR_PERMISSION = "hmccosmetics.dye.custom-color";
     private @Nullable ItemStack CUSTOM_COLOR_ITEM = null;
-    private String CUSTOM_COLOR_DIALOG_TITLE = "<#45CDE9>Custom Color";
-    private String CUSTOM_COLOR_DIALOG_LABEL = "<gray>Hex color (e.g. #FF00AA)";
-    private String CUSTOM_COLOR_DIALOG_CONFIRM = "<green>Confirm";
-    private String CUSTOM_COLOR_DIALOG_CANCEL = "<red>Cancel";
-    private String CUSTOM_COLOR_DIALOG_INITIAL = "#FFFFFF";
-    private int CUSTOM_COLOR_DIALOG_MAX_LENGTH = 7;
 
     /**
-     * Whether the running server exposes the Paper dialog API. Checked before any of the
-     * dialog classes are touched so the plugin still loads on servers older than 1.21.7.
+     * The advanced, ArtMap style palette that the custom color button opens.
      */
-    private static final boolean DIALOG_SUPPORTED = isDialogSupported();
-
-    private static boolean isDialogSupported() {
-        try {
-            Class.forName("io.papermc.paper.dialog.Dialog", false, InternalDyeMenu.class.getClassLoader());
-            return true;
-        } catch (ClassNotFoundException | LinkageError ignored) {
-            return false;
-        }
-    }
+    private static final PaletteDyeMenu PALETTE_MENU = new PaletteDyeMenu();
 
     @Override
     public void reload() {
@@ -127,65 +120,94 @@ public class InternalDyeMenu implements DyeMenu {
             throw new RuntimeException(e);
         }
 
-        if (!config.node("format").virtual()) {
-            MessagesUtil.sendDebugMessages("internal_dye_menu.yml is using the old format, which is no longer supported. Delete plugins/HMCCosmetics/menus/functional/internal_dye_menu.yml and restart to regenerate it. Falling back to the built-in palette until then.", Level.WARNING);
+
+        if (config.node("format").virtual()) {
+            MessagesUtil.sendDebugMessages("internal_dye_menu.yml is missing the 'format' section (it looks like the palette_dye_menu.yml format). Delete plugins/HMCCosmetics/menus/functional/internal_dye_menu.yml and restart to regenerate it. Using the built-in default layout for now.", Level.WARNING);
+            FORMAT = DEFAULT_FORMAT;
+        } else {
+            try {
+                FORMAT = config.node("format").getList(String.class);
+            } catch (SerializationException e) {
+                e.printStackTrace();
+            }
+            if (FORMAT == null || FORMAT.isEmpty()) {
+                MessagesUtil.sendDebugMessages("Format for the internal dye menu is invalid! Using the built-in default layout.", Level.WARNING);
+                FORMAT = DEFAULT_FORMAT;
+            }
         }
 
-        ConfigurationNode menuNode = config.node("menu");
-        ROWS = Math.max(1, Math.min(MAX_ROWS, menuNode.node("rows").getInt(6)));
-        COLOR_START_SLOT = menuNode.node("color-start-slot").getInt(18);
-        CONFIGURED_PAGE_SIZE = Math.max(1, menuNode.node("color-page-size").getInt(36));
-        PREVIOUS_SLOT = menuNode.node("previous-slot").getInt(0);
-        NEXT_SLOT = menuNode.node("next-slot").getInt(8);
-
-        PREVIOUS_ITEM = deserializeRawItem(menuNode.node("previous-item"));
-        if (PREVIOUS_ITEM == null) PREVIOUS_ITEM = createNavigationItem(true);
-        NEXT_ITEM = deserializeRawItem(menuNode.node("next-item"));
-        if (NEXT_ITEM == null) NEXT_ITEM = createNavigationItem(false);
-        PREVIOUS_DISABLED_ITEM = deserializeRawItem(menuNode.node("previous-disabled"));
-        if (PREVIOUS_DISABLED_ITEM == null) PREVIOUS_DISABLED_ITEM = createDisabledNavigationItem();
-        NEXT_DISABLED_ITEM = deserializeRawItem(menuNode.node("next-disabled"));
-        if (NEXT_DISABLED_ITEM == null) NEXT_DISABLED_ITEM = createDisabledNavigationItem();
-        FILLER_ITEM = deserializeRawItem(menuNode.node("filler"));
-
-        ConfigurationNode colorItemNode = config.node("color-item");
-        COLOR_ITEM = deserializeItem(colorItemNode);
-
-        String nameTemplate = colorItemNode.node("name").getString("");
-        COLOR_NAME_TEMPLATE = nameTemplate.isBlank() ? DEFAULT_COLOR_NAME : nameTemplate;
-
-        ConfigurationNode loreNode = colorItemNode.node("lore");
-        COLOR_LORE_TEMPLATE = loreNode.virtual() ? DEFAULT_COLOR_LORE : getStringList(loreNode);
-
-        loadShades(config.node("shades"));
-        COLORS = buildPalette(config.node("base-colors"));
-
-        INPUT_SLOT = Settings.getDyeMenuInputSlot();
-        OUTPUT_SLOT = Settings.getDyeMenuOutputSlot();
-        TITLE_HAS_PAGE_PLACEHOLDER = Settings.getDyeMenuName().contains("{page}")
-                || Settings.getDyeMenuName().contains("{pages}")
-                || Settings.getDyeMenuName().contains("{target_page}");
-        if (!isValidSlot(INPUT_SLOT)) {
-            MessagesUtil.sendDebugMessages("Dye menu input slot " + INPUT_SLOT + " is outside the menu. Falling back to slot 10.", Level.WARNING);
-            INPUT_SLOT = Math.min(10, ROWS * ROW_SIZE - 1);
+        ROWS = FORMAT.size();
+        StringBuilder builder = new StringBuilder();
+        for (String row : FORMAT) {
+            builder.append(row);
         }
-        if (!isValidSlot(OUTPUT_SLOT)) {
-            MessagesUtil.sendDebugMessages("Dye menu output slot " + OUTPUT_SLOT + " is outside the menu. Falling back to slot 16.", Level.WARNING);
-            OUTPUT_SLOT = Math.min(16, ROWS * ROW_SIZE - 1);
+        String formatString = builder.toString();
+        if (formatString.length() < ROWS * 9) {
+            MessagesUtil.sendDebugMessages("Format for the internal dye menu does not fill all rows! Using the built-in default layout.", Level.WARNING);
+            FORMAT = DEFAULT_FORMAT;
+            ROWS = FORMAT.size();
+            builder.setLength(0);
+            for (String row : FORMAT) {
+                builder.append(row);
+            }
+            formatString = builder.toString();
         }
-        if (INPUT_SLOT == OUTPUT_SLOT) {
-            MessagesUtil.sendDebugMessages("Dye menu input and output slots are the same slot (" + INPUT_SLOT + "). Check your config.yml.", Level.WARNING);
+
+        PRIMARY_COLORS_SLOTS.clear();
+        SECONDARY_COLORS_SLOTS.clear();
+        for (int i = 0; i < (ROWS * 9); i++) {
+            char character = formatString.charAt(i);
+            switch (character) {
+                case '$' -> PRIMARY_COLORS_SLOTS.add(i);
+                case '%' -> SECONDARY_COLORS_SLOTS.add(i);
+            }
         }
+
+        if (!config.node("primary-color-item").virtual()) {
+            try {
+                PRIMARY_COLOR_ITEM = ItemSerializer.INSTANCE.deserialize(ItemStack.class, config.node("primary-color-item"));
+                if (PRIMARY_COLOR_ITEM.getType() == Material.AIR) {
+                    MessagesUtil.sendDebugMessages("Internal Dye Menu Primary Color Item has returned AIR, defaulting to use the cosmetic item itself", Level.WARNING);
+                    PRIMARY_COLOR_ITEM = null;
+                }
+            } catch (SerializationException e) {
+                e.printStackTrace();
+            }
+        }
+        if (!config.node("secondary-color-item").virtual()) {
+            try {
+                SECONDARY_COLOR_ITEM = ItemSerializer.INSTANCE.deserialize(ItemStack.class, config.node("secondary-color-item"));
+                if (SECONDARY_COLOR_ITEM.getType() == Material.AIR) {
+                    MessagesUtil.sendDebugMessages("Internal Dye Menu Secondary Color Item has returned AIR, defaulting to use the cosmetic item itself", Level.WARNING);
+                    SECONDARY_COLOR_ITEM = null;
+                }
+            } catch (SerializationException e) {
+                e.printStackTrace();
+            }
+        }
+
+        PRIMARY_COLORS = loadColorsFromConfig(config.node("colors"));
+        if (PRIMARY_COLORS.isEmpty()) {
+            MessagesUtil.sendDebugMessages("No colors were found in internal_dye_menu.yml. Delete plugins/HMCCosmetics/menus/functional/internal_dye_menu.yml and restart to regenerate it. Using the built-in default colors for now.", Level.WARNING);
+            PRIMARY_COLORS = DEFAULT_PRIMARY_COLORS;
+        }
+
+        INPUT_SLOT = config.node("input-slot").virtual()
+                ? Settings.getDyeMenuInputSlot()
+                : config.node("input-slot").getInt(Settings.getDyeMenuInputSlot());
+        OUTPUT_SLOT = config.node("output-slot").virtual()
+                ? Settings.getDyeMenuOutputSlot()
+                : config.node("output-slot").getInt(Settings.getDyeMenuOutputSlot());
 
         loadCustomColorSettings(config.node("custom-color"));
-
-        buildPaletteSlots(true);
         validateCustomColorSettings();
+
+        PALETTE_MENU.reload();
     }
 
     private void loadCustomColorSettings(@NotNull ConfigurationNode customColorNode) {
         CUSTOM_COLOR_ENABLED = customColorNode.node("enabled").getBoolean(true);
-        CUSTOM_COLOR_SLOT = customColorNode.node("slot").getInt(4);
+        CUSTOM_COLOR_SLOT = customColorNode.node("slot").getInt(31);
         CUSTOM_COLOR_PERMISSION = customColorNode.node("permission").getString("hmccosmetics.dye.custom-color");
 
         CUSTOM_COLOR_ITEM = null;
@@ -199,254 +221,67 @@ public class InternalDyeMenu implements DyeMenu {
                 e.printStackTrace();
             }
         }
-
-        ConfigurationNode dialogNode = customColorNode.node("dialog");
-        CUSTOM_COLOR_DIALOG_TITLE = dialogNode.node("title").getString(CUSTOM_COLOR_DIALOG_TITLE);
-        CUSTOM_COLOR_DIALOG_LABEL = dialogNode.node("label").getString(CUSTOM_COLOR_DIALOG_LABEL);
-        CUSTOM_COLOR_DIALOG_CONFIRM = dialogNode.node("confirm").getString(CUSTOM_COLOR_DIALOG_CONFIRM);
-        CUSTOM_COLOR_DIALOG_CANCEL = dialogNode.node("cancel").getString(CUSTOM_COLOR_DIALOG_CANCEL);
-        CUSTOM_COLOR_DIALOG_INITIAL = dialogNode.node("initial").getString(CUSTOM_COLOR_DIALOG_INITIAL);
-        CUSTOM_COLOR_DIALOG_MAX_LENGTH = Math.max(7, dialogNode.node("max-length").getInt(7));
     }
 
     private void validateCustomColorSettings() {
         if (!CUSTOM_COLOR_ENABLED) return;
 
-        if (!DIALOG_SUPPORTED) {
-            CUSTOM_COLOR_ENABLED = false;
-            MessagesUtil.sendDebugMessages("Dialogs are not available on this server version, so the custom color button has been disabled.", Level.WARNING);
-            return;
-        }
-
-        if (!isValidSlot(CUSTOM_COLOR_SLOT)) {
+        if (CUSTOM_COLOR_SLOT < 0 || CUSTOM_COLOR_SLOT >= ROWS * 9) {
             CUSTOM_COLOR_ENABLED = false;
             MessagesUtil.sendDebugMessages("Custom color slot " + CUSTOM_COLOR_SLOT + " is outside of the menu, so the custom color button has been disabled.", Level.WARNING);
             return;
         }
 
-        if (CUSTOM_COLOR_SLOT == INPUT_SLOT
-                || CUSTOM_COLOR_SLOT == OUTPUT_SLOT
-                || CUSTOM_COLOR_SLOT == PREVIOUS_SLOT
-                || CUSTOM_COLOR_SLOT == NEXT_SLOT
-                || PALETTE_SLOTS.contains(CUSTOM_COLOR_SLOT)) {
+        if (PRIMARY_COLORS_SLOTS.contains(CUSTOM_COLOR_SLOT)
+                || SECONDARY_COLORS_SLOTS.contains(CUSTOM_COLOR_SLOT)
+                || CUSTOM_COLOR_SLOT == INPUT_SLOT
+                || CUSTOM_COLOR_SLOT == OUTPUT_SLOT) {
             CUSTOM_COLOR_ENABLED = false;
             MessagesUtil.sendDebugMessages("Custom color slot " + CUSTOM_COLOR_SLOT + " overlaps another menu item, so the custom color button has been disabled.", Level.WARNING);
         }
     }
 
-    private void buildPaletteSlots(boolean warn) {
-        PALETTE_SLOTS.clear();
-
-        int menuSize = ROWS * ROW_SIZE;
-        if (!isValidSlot(COLOR_START_SLOT)) {
-            if (warn) MessagesUtil.sendDebugMessages("Color start slot " + COLOR_START_SLOT + " is outside the menu. No colors will be displayed.", Level.WARNING);
-            return;
-        }
-
-        boolean reserveCustomSlot = CUSTOM_COLOR_ENABLED && DIALOG_SUPPORTED && isValidSlot(CUSTOM_COLOR_SLOT);
-
-        for (int i = 0; i < CONFIGURED_PAGE_SIZE; i++) {
-            int slot = COLOR_START_SLOT + i;
-            if (slot >= menuSize) {
-                if (warn) MessagesUtil.sendDebugMessages("color-start-slot + color-page-size goes outside the menu, so only " + PALETTE_SLOTS.size() + " color slots are used.", Level.WARNING);
-                break;
-            }
-
-            if (slot == INPUT_SLOT || slot == OUTPUT_SLOT || slot == PREVIOUS_SLOT || slot == NEXT_SLOT || (reserveCustomSlot && slot == CUSTOM_COLOR_SLOT)) {
-                if (warn) MessagesUtil.sendDebugMessages("Color slot " + slot + " overlaps another menu item, so it has been skipped.", Level.WARNING);
-                continue;
-            }
-
-            PALETTE_SLOTS.add(slot);
-        }
-
-        if (PALETTE_SLOTS.isEmpty() && warn) {
-            MessagesUtil.sendDebugMessages("No color slots are available in the internal dye menu. Check the menu section of internal_dye_menu.yml.", Level.WARNING);
-        }
-
-        if (warn) {
-            if (PREVIOUS_SLOT >= 0 && !isValidSlot(PREVIOUS_SLOT)) {
-                MessagesUtil.sendDebugMessages("previous-slot " + PREVIOUS_SLOT + " is outside of the menu.", Level.WARNING);
-            }
-            if (NEXT_SLOT >= 0 && !isValidSlot(NEXT_SLOT)) {
-                MessagesUtil.sendDebugMessages("next-slot " + NEXT_SLOT + " is outside of the menu.", Level.WARNING);
-            }
-            if (PREVIOUS_SLOT >= 0 && PREVIOUS_SLOT == NEXT_SLOT) {
-                MessagesUtil.sendDebugMessages("previous-slot and next-slot are the same slot (" + PREVIOUS_SLOT + ").", Level.WARNING);
-            }
-        }
-    }
-
     @Override
     public void openMenu(@NotNull Player viewer, @NotNull CosmeticHolder cosmeticHolder, @NotNull Cosmetic cosmetic) {
-        openMenu(viewer, cosmeticHolder, cosmetic, null, 0);
+        openMenu(viewer, cosmeticHolder, cosmetic, null);
     }
 
-    private void openMenu(@NotNull Player viewer, @NotNull CosmeticHolder cosmeticHolder, @NotNull Cosmetic cosmetic, @Nullable Color presetColor, int page) {
-        if (PALETTE_SLOTS.isEmpty() || COLORS.isEmpty()) {
-            MessagesUtil.sendDebugMessages("The internal dye menu has no colors to display. Check menus/functional/internal_dye_menu.yml.", Level.WARNING);
+    private void openMenu(@NotNull Player viewer, @NotNull CosmeticHolder cosmeticHolder, @NotNull Cosmetic cosmetic, @Nullable Color presetColor) {
+        if (ROWS == 0 || ROWS >= 7) {
+            MessagesUtil.sendDebugMessages("Internal Dye Menu formatting is not returning the correct amount of rows (Rows found: " + ROWS + "). Check your internal dye menu config.", Level.WARNING);
             cosmeticHolder.addCosmetic(cosmetic);
             return;
         }
 
-        ItemStack cosmeticItem = cosmetic.getItem();
-        if (cosmeticItem == null) {
-            cosmeticHolder.addCosmetic(cosmetic);
-            return;
-        }
-
-        new DyeSession(viewer, cosmeticHolder, cosmetic, cosmeticItem.clone(), presetColor, page).open();
-    }
-
-    private final class DyeSession {
-
-        private final Player viewer;
-        private final CosmeticHolder cosmeticHolder;
-        private final Cosmetic cosmetic;
-        private final ItemStack cosmeticItem;
-        private final AtomicReference<Color> preview = new AtomicReference<>();
-        private final int lastPage;
-        private final Gui gui;
-
-        private int page;
-
-        private DyeSession(@NotNull Player viewer,
-                           @NotNull CosmeticHolder cosmeticHolder,
-                           @NotNull Cosmetic cosmetic,
-                           @NotNull ItemStack cosmeticItem,
-                           @Nullable Color presetColor,
-                           int page) {
-            this.viewer = viewer;
-            this.cosmeticHolder = cosmeticHolder;
-            this.cosmetic = cosmetic;
-            this.cosmeticItem = cosmeticItem;
-            this.preview.set(presetColor);
-            this.lastPage = Math.max(0, (COLORS.size() - 1) / PALETTE_SLOTS.size());
-            this.page = Math.max(0, Math.min(page, lastPage));
-            this.gui = buildGui();
-        }
-
-        private Gui buildGui() {
-            Gui created = new ChestGuiBuilder().rows(ROWS).title(titleComponent(page)).create();
-            created.setUpdating(true);
-            created.setDefaultClickAction(event -> event.setCancelled(true));
-            created.setPlayerInventoryAction(event -> event.setCancelled(true));
-            created.setDefaultTopClickAction(event -> {
-                event.setCancelled(true);
-                if (event.getSlot() != OUTPUT_SLOT) return;
-
-                Color color = preview.get();
-                if (color == null) {
-                    ItemStack outputItem = event.getInventory().getItem(OUTPUT_SLOT);
-                    color = NMSHandlers.getHandler().getUtilHandler().getColor(outputItem);
-                }
-
-                created.close(event.getWhoClicked());
+        Gui gui = new ChestGuiBuilder().rows(ROWS).title(MiniMessage.miniMessage().deserialize(Hooks.processPlaceholders(viewer, Settings.getDyeMenuName()))).create();
+        gui.setUpdating(true);
+        gui.setDefaultClickAction(event -> event.setCancelled(true));
+        gui.setDefaultTopClickAction(event -> {
+            event.setCancelled(true);
+            if (event.getSlot() == OUTPUT_SLOT) {
+                gui.close(event.getWhoClicked());
+                ItemStack outputItem = event.getInventory().getItem(OUTPUT_SLOT);
+                Color color = NMSHandlers.getHandler().getUtilHandler().getColor(outputItem);
                 if (color != null) cosmeticHolder.addCosmetic(cosmetic, color);
                 else cosmeticHolder.addCosmetic(cosmetic);
-            });
-
-            if (CUSTOM_COLOR_ENABLED) {
-                created.setItem(CUSTOM_COLOR_SLOT, createCustomColorButton());
             }
+        });
 
-            return created;
+        final ItemStack dyingItemStack = cosmetic.getItem();
+
+        gui.setItem(INPUT_SLOT, new GuiItem(processMenuItem(viewer, dyingItemStack.clone())));
+        ItemStack outputItem = dyingItemStack.clone();
+        if (presetColor != null) {
+            outputItem = NMSHandlers.getHandler().getUtilHandler().setColor(outputItem, presetColor);
         }
+        gui.setItem(OUTPUT_SLOT, new GuiItem(processMenuItem(viewer, outputItem)));
 
-        private void open() {
-            // The Triumph GUI inventory only exists after open(), so the palette must be
-            // rendered afterwards (updateItem/removeItem write straight into the inventory).
-            gui.open(viewer);
-            render(false);
-        }
-
-        private void render(boolean refreshTitle) {
-            if (refreshTitle && TITLE_HAS_PAGE_PLACEHOLDER) {
-                // updateTitle recreates the inventory (and re-opens it for viewers), so it is
-                // only done when the page placeholder in the title actually changes.
-                gui.updateTitle(titleComponent(page));
-            }
-
-            gui.updateItem(INPUT_SLOT, new GuiItem(processItem(viewer, cosmeticItem.clone(), Map.of())));
-            updateOutput();
-
-            ItemStack filler = FILLER_ITEM;
-            if (filler != null && filler.getType() == Material.AIR) filler = null;
-
-            for (int slot : PALETTE_SLOTS) {
-                if (filler == null) {
-                    gui.removeItem(slot);
-                } else {
-                    gui.updateItem(slot, new GuiItem(processItem(viewer, filler.clone(), pagePlaceholders(page))));
-                }
-            }
-
-            int startIndex = page * PALETTE_SLOTS.size();
-            for (int i = 0; i < PALETTE_SLOTS.size(); i++) {
-                int colorIndex = startIndex + i;
-                if (colorIndex >= COLORS.size()) break;
-
-                PaletteColor paletteColor = COLORS.get(colorIndex);
-                GuiItem item = new GuiItem(buildColorItem(paletteColor));
-                item.setAction(event -> {
-                    event.setCancelled(true);
-                    select(paletteColor);
-                });
-                gui.updateItem(PALETTE_SLOTS.get(i), item);
-            }
-
-            renderNavigation();
-        }
-
-        private void updateOutput() {
-            ItemStack outputItem = cosmeticItem.clone();
-            Color color = preview.get();
-            if (color != null) {
-                outputItem = NMSHandlers.getHandler().getUtilHandler().setColor(outputItem, color);
-            }
-            gui.updateItem(OUTPUT_SLOT, new GuiItem(processItem(viewer, outputItem, Map.of())));
-        }
-
-        private void select(@NotNull PaletteColor paletteColor) {
-            preview.set(paletteColor.color());
-            updateOutput();
-        }
-
-        private void renderNavigation() {
-            renderNavigationButton(true);
-            renderNavigationButton(false);
-        }
-
-        private void renderNavigationButton(boolean previous) {
-            int slot = previous ? PREVIOUS_SLOT : NEXT_SLOT;
-            if (!isValidSlot(slot)) return;
-
-            boolean enabled = previous ? page > 0 : page < lastPage;
-            ItemStack template = previous
-                    ? (enabled ? PREVIOUS_ITEM : PREVIOUS_DISABLED_ITEM)
-                    : (enabled ? NEXT_ITEM : NEXT_DISABLED_ITEM);
-
-            if (template == null || template.getType() == Material.AIR) {
-                gui.removeItem(slot);
-                return;
-            }
-
-            int targetPage = previous ? page - 1 : page + 1;
-            GuiItem item = new GuiItem(processItem(viewer, template.clone(), pagePlaceholders(targetPage)));
-            if (enabled) {
-                item.setAction(event -> {
-                    event.setCancelled(true);
-                    page = targetPage;
-                    render(true);
-                });
-            }
-            gui.updateItem(slot, item);
-        }
-
-        private GuiItem createCustomColorButton() {
-            ItemStack item = CUSTOM_COLOR_ITEM != null ? CUSTOM_COLOR_ITEM.clone() : createDefaultCustomColorItem();
-            GuiItem guiItem = new GuiItem(processItem(viewer, item, Map.of()));
-            guiItem.setAction(event -> {
+        if (CUSTOM_COLOR_ENABLED) {
+            ItemStack customColorItem = CUSTOM_COLOR_ITEM != null
+                    ? processMenuItem(viewer, CUSTOM_COLOR_ITEM.clone())
+                    : createDefaultCustomColorItem();
+            GuiItem customColorGuiItem = new GuiItem(customColorItem);
+            customColorGuiItem.setAction(event -> {
                 event.setCancelled(true);
 
                 if (!CUSTOM_COLOR_PERMISSION.isBlank()
@@ -456,77 +291,61 @@ public class InternalDyeMenu implements DyeMenu {
                     return;
                 }
 
-                int returnPage = page;
-                CustomColorDialog.open(
-                        viewer,
-                        CUSTOM_COLOR_DIALOG_TITLE,
-                        CUSTOM_COLOR_DIALOG_LABEL,
-                        CUSTOM_COLOR_DIALOG_CONFIRM,
-                        CUSTOM_COLOR_DIALOG_CANCEL,
-                        CUSTOM_COLOR_DIALOG_INITIAL,
-                        CUSTOM_COLOR_DIALOG_MAX_LENGTH,
-                        color -> openMenu(viewer, cosmeticHolder, cosmetic, color, returnPage)
-                );
+                PALETTE_MENU.openMenu(viewer, cosmeticHolder, cosmetic);
             });
-            return guiItem;
+            gui.setItem(CUSTOM_COLOR_SLOT, customColorGuiItem);
         }
 
-        private ItemStack buildColorItem(@NotNull PaletteColor paletteColor) {
-            ItemStack item = COLOR_ITEM != null ? COLOR_ITEM.clone() : cosmeticItem.clone();
-            item = NMSHandlers.getHandler().getUtilHandler().setColor(item, paletteColor.color());
-
-            Map<String, String> placeholders = colorPlaceholders(paletteColor);
-            ItemMeta itemMeta = item.getItemMeta();
-            if (itemMeta != null) {
-                if (COLOR_NAME_TEMPLATE != null) {
-                    itemMeta.displayName(formatText(COLOR_NAME_TEMPLATE, placeholders));
-                }
-                if (COLOR_LORE_TEMPLATE != null && !COLOR_LORE_TEMPLATE.isEmpty()) {
-                    List<Component> lore = new ArrayList<>(COLOR_LORE_TEMPLATE.size());
-                    for (String line : COLOR_LORE_TEMPLATE) {
-                        lore.add(formatText(line, placeholders));
-                    }
-                    itemMeta.lore(lore);
-                }
-                makeNonItalic(itemMeta);
-                item.setItemMeta(itemMeta);
+        AtomicInteger ran = new AtomicInteger(0);
+        for (Integer i : PRIMARY_COLORS_SLOTS) {
+            int pRan = ran.getAndAdd(1);
+            if (pRan >= PRIMARY_COLORS.size()) {
+                MessagesUtil.sendDebugMessages("There are less primary colors than slots for primary colors!", Level.WARNING);
+                continue;
             }
+            PrimaryColor primaryColor = PRIMARY_COLORS.get(pRan);
 
-            return HMCCInventoryUtils.hideMenuTooltipDetails(item);
+            ItemStack primaryColorItem = PRIMARY_COLOR_ITEM != null ? PRIMARY_COLOR_ITEM.clone() : cosmetic.getItem();
+            if (primaryColorItem == null) continue;
+            primaryColorItem = NMSHandlers.getHandler().getUtilHandler().setColor(primaryColorItem, primaryColor.color);
+            primaryColorItem.editMeta(itemMeta -> itemMeta.displayName(MiniMessage.miniMessage().deserialize(primaryColor.name()).decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE)));
+            primaryColorItem = processMenuItem(viewer, primaryColorItem);
+            GuiItem guiItem = new GuiItem(primaryColorItem);
+
+            guiItem.setAction(event -> {
+                event.setCancelled(true);
+
+                ItemStack cosmeticItem = processMenuItem(viewer, NMSHandlers.getHandler().getUtilHandler().setColor(cosmetic.getItem(), primaryColor.color));
+                gui.updateItem(OUTPUT_SLOT, new GuiItem(cosmeticItem));
+
+                List<SecondaryColor> secondaryColors = primaryColor.secondaryColors();
+                AtomicInteger secondaryRan = new AtomicInteger(0);
+                SECONDARY_COLORS_SLOTS.forEach(slot -> {
+                    int sRan = secondaryRan.getAndAdd(1);
+                    if (sRan >= secondaryColors.size()) {
+                        MessagesUtil.sendDebugMessages("There are less secondary colors than slots for primary color " + primaryColor.name + "!", Level.WARNING);
+                        return;
+                    }
+                    SecondaryColor secondaryColor = secondaryColors.get(sRan);
+
+                    ItemStack secondaryItem = SECONDARY_COLOR_ITEM != null ? SECONDARY_COLOR_ITEM.clone() : cosmetic.getItem();
+                    secondaryItem = NMSHandlers.getHandler().getUtilHandler().setColor(secondaryItem, secondaryColor.color);
+                    secondaryItem.editMeta(itemMeta -> itemMeta.displayName(MiniMessage.miniMessage().deserialize(secondaryColor.name()).decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE)));
+                    secondaryItem = processMenuItem(viewer, secondaryItem);
+                    GuiItem secondaryGuiItem = new GuiItem(secondaryItem);
+                    secondaryGuiItem.setAction(secondaryEvent -> {
+                        ItemStack secondaryItemStack = processMenuItem(viewer, NMSHandlers.getHandler().getUtilHandler().setColor(dyingItemStack.clone(), secondaryColor.color));
+                        gui.updateItem(OUTPUT_SLOT, new GuiItem(secondaryItemStack));
+                    });
+
+                    gui.updateItem(slot, secondaryGuiItem);
+                });
+            });
+            gui.setItem(i, guiItem);
         }
 
-        private Component titleComponent(int pageIndex) {
-            String title = applyPlaceholders(Settings.getDyeMenuName(), pagePlaceholders(pageIndex));
-            title = Hooks.processPlaceholders(viewer, title);
-            return MiniMessage.miniMessage().deserialize(title);
-        }
 
-        private Component formatText(@NotNull String rawText, @NotNull Map<String, String> placeholders) {
-            String text = applyPlaceholders(rawText, placeholders);
-            text = Hooks.processPlaceholders(viewer, text);
-            return MiniMessage.miniMessage().deserialize(text)
-                    .decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE);
-        }
-
-        private Map<String, String> colorPlaceholders(@NotNull PaletteColor paletteColor) {
-            Map<String, String> placeholders = pagePlaceholders(page);
-            placeholders.put("{color_name}", paletteColor.name());
-            placeholders.put("{shade_name}", paletteColor.shadeName());
-            placeholders.put("{shade}", String.valueOf(paletteColor.shade()));
-            placeholders.put("{hex}", paletteColor.hex());
-            placeholders.put("{hex_code}", "#" + paletteColor.hex());
-            placeholders.put("{color}", "#" + paletteColor.hex());
-            return placeholders;
-        }
-
-        private Map<String, String> pagePlaceholders(int targetPage) {
-            int safeTarget = Math.max(0, Math.min(targetPage, lastPage));
-            Map<String, String> placeholders = new HashMap<>();
-            placeholders.put("{page}", String.valueOf(page + 1));
-            placeholders.put("{pages}", String.valueOf(lastPage + 1));
-            placeholders.put("{target_page}", String.valueOf(safeTarget + 1));
-            return placeholders;
-        }
+        gui.open(viewer);
     }
 
     private static ItemStack createDefaultCustomColorItem() {
@@ -535,32 +354,12 @@ public class InternalDyeMenu implements DyeMenu {
             itemMeta.displayName(MiniMessage.miniMessage().deserialize("<#45CDE9>Custom Color")
                     .decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE));
             itemMeta.lore(List.of(
-                    MiniMessage.miniMessage().deserialize("<gray>Click to type a hex color")
+                    MiniMessage.miniMessage().deserialize("<gray>Click to open the full color palette")
                             .decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE),
-                    MiniMessage.miniMessage().deserialize("<gray>Example: <white>#FF00AA")
+                    MiniMessage.miniMessage().deserialize("<gray>Includes a custom hex input")
                             .decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE)
             ));
         });
-        return item;
-    }
-
-    private static ItemStack createNavigationItem(boolean previous) {
-        ItemStack item = new ItemStack(Material.MAGENTA_GLAZED_TERRACOTTA);
-        item.editMeta(itemMeta -> {
-            itemMeta.displayName(MiniMessage.miniMessage().deserialize(previous ? "<red><bold><<</bold>" : "<green><bold>>></bold>")
-                    .decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE));
-            itemMeta.lore(List.of(
-                    MiniMessage.miniMessage().deserialize("<gray>Page {target_page}/{pages}")
-                            .decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE)
-            ));
-        });
-        return item;
-    }
-
-    private static ItemStack createDisabledNavigationItem() {
-        ItemStack item = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
-        item.editMeta(itemMeta -> itemMeta.displayName(MiniMessage.miniMessage().deserialize(" ")
-                .decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE)));
         return item;
     }
 
@@ -569,24 +368,21 @@ public class InternalDyeMenu implements DyeMenu {
      * display names and lore. This forces them to be non-italic (and resolves placeholders)
      * so buttons in the dye menu match the rest of the plugin's menus.
      */
-    private static ItemStack processItem(@NotNull Player viewer, @NotNull ItemStack item, @NotNull Map<String, String> placeholders) {
+    private static ItemStack processMenuItem(@NotNull Player viewer, @NotNull ItemStack item) {
         ItemMeta itemMeta = item.getItemMeta();
         if (itemMeta == null) return item;
 
         if (itemMeta.hasDisplayName()) {
             String displayName = MiniMessage.miniMessage().serialize(itemMeta.displayName());
-            displayName = applyPlaceholders(displayName, placeholders);
             displayName = Hooks.processPlaceholders(viewer, displayName);
             itemMeta.displayName(MiniMessage.miniMessage().deserialize(displayName)
                     .decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE));
         }
 
-        List<Component> itemLore = itemMeta.lore();
-        if (itemLore != null) {
-            List<Component> processedLore = new ArrayList<>(itemLore.size());
-            for (Component loreLine : itemLore) {
+        if (itemMeta.hasLore()) {
+            List<Component> processedLore = new ArrayList<>();
+            for (Component loreLine : itemMeta.lore()) {
                 String loreString = MiniMessage.miniMessage().serialize(loreLine);
-                loreString = applyPlaceholders(loreString, placeholders);
                 loreString = Hooks.processPlaceholders(viewer, loreString);
                 processedLore.add(MiniMessage.miniMessage().deserialize(loreString)
                         .decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE));
@@ -598,149 +394,93 @@ public class InternalDyeMenu implements DyeMenu {
         return HMCCInventoryUtils.hideMenuTooltipDetails(item);
     }
 
-    private static void makeNonItalic(@NotNull ItemMeta itemMeta) {
-        if (itemMeta.hasDisplayName()) {
-            Component displayName = itemMeta.displayName();
-            if (displayName != null) {
-                itemMeta.displayName(displayName.decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE));
+    /**
+     * Loads all primary colors from the configuration node
+     * @param rootNode The root configuration node containing color definitions
+     * @return List of PrimaryColor objects
+     */
+    public static List<PrimaryColor> loadColorsFromConfig(ConfigurationNode rootNode) {
+        List<PrimaryColor> primaryColors = new ArrayList<>();
+
+        // Iterate through all child nodes (each represents a primary color)
+        Map<Object, ? extends ConfigurationNode> colorNodes = rootNode.childrenMap();
+
+        for (Map.Entry<Object, ? extends ConfigurationNode> entry : colorNodes.entrySet()) {
+            ConfigurationNode colorNode = entry.getValue();
+
+            try {
+                PrimaryColor primaryColor = parsePrimaryColor(colorNode);
+                primaryColors.add(primaryColor);
+            } catch (Exception e) {
+                // Log error but continue processing other colors
+                System.err.println("Failed to parse primary color: " + entry.getKey() + " - " + e.getMessage());
             }
         }
 
-        List<Component> lore = itemMeta.lore();
-        if (lore != null) {
-            List<Component> processedLore = new ArrayList<>(lore.size());
-            for (Component line : lore) {
-                processedLore.add(line.decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE));
-            }
-            itemMeta.lore(processedLore);
-        }
-    }
-
-    private static String applyPlaceholders(@NotNull String text, @NotNull Map<String, String> placeholders) {
-        String result = text;
-        for (Map.Entry<String, String> entry : placeholders.entrySet()) {
-            result = result.replace(entry.getKey(), entry.getValue());
-        }
-        return result;
-    }
-
-    private void loadShades(@NotNull ConfigurationNode shadesNode) {
-        SHADES.clear();
-
-        if (!shadesNode.virtual()) {
-            for (ConfigurationNode shadeNode : shadesNode.childrenList()) {
-                String name = shadeNode.node("name").getString("Base");
-                double factor = shadeNode.node("factor").getDouble(1.0D);
-                if (!Double.isFinite(factor) || factor < 0) {
-                    MessagesUtil.sendDebugMessages("Skipping dye shade '" + name + "' because its factor is invalid.", Level.WARNING);
-                    continue;
-                }
-                SHADES.add(new Shade(name, factor));
-            }
-        }
-
-        if (SHADES.isEmpty()) {
-            SHADES.add(new Shade("Dark", 0.55D));
-            SHADES.add(new Shade("Dim", 0.75D));
-            SHADES.add(new Shade("Base", 1.0D));
-            SHADES.add(new Shade("Light", 1.25D));
-        }
+        return primaryColors;
     }
 
     /**
-     * Flattens the configured base colors into a single palette by generating one entry per
-     * shade, in the same order as the ArtMap artkit palette.
+     * Parses a single primary color from a configuration node
      */
-    private List<PaletteColor> buildPalette(@NotNull ConfigurationNode baseColorsNode) {
-        List<PaletteColor> palette = new ArrayList<>();
+    private static PrimaryColor parsePrimaryColor(ConfigurationNode node) {
+        // Get primary color name (with MiniMessage formatting)
+        String nameWithFormatting = node.node("name").getString("");
+        Component nameComponent = MiniMessage.miniMessage().deserialize(nameWithFormatting);
+        String plainName = extractPlainText(nameComponent);
 
-        for (Map.Entry<Object, ? extends ConfigurationNode> entry : baseColorsNode.childrenMap().entrySet()) {
-            ConfigurationNode colorNode = entry.getValue();
-            String name = colorNode.node("name").getString("");
-            if (name.isBlank()) name = String.valueOf(entry.getKey());
+        // Get primary color hex value
+        String colorHex = node.node("color").getString("#FFFFFF");
+        Color primaryColor = HMCCServerUtils.hex2Rgb(colorHex);
 
-            String hex = normalizeHex(colorNode.node("color").getString("#FFFFFF"));
-            addShades(palette, name, hex);
-        }
+        // Parse secondary colors
+        List<SecondaryColor> secondaryColors = new ArrayList<>();
+        ConfigurationNode subcolorsNode = node.node("subcolors");
 
-        if (palette.isEmpty()) {
-            MessagesUtil.sendDebugMessages("No base colors were found in internal_dye_menu.yml, so the built-in palette is being used. Delete the file to regenerate it with the new format.", Level.WARNING);
-            for (DefaultColor defaultColor : DEFAULT_BASE_COLORS) {
-                addShades(palette, defaultColor.name(), defaultColor.hex());
+        if (!subcolorsNode.virtual() && subcolorsNode.isList()) {
+            List<? extends ConfigurationNode> subcolorList = subcolorsNode.childrenList();
+
+            for (ConfigurationNode subcolorNode : subcolorList) {
+                try {
+                    SecondaryColor secondaryColor = parseSecondaryColor(subcolorNode);
+                    secondaryColors.add(secondaryColor);
+                } catch (Exception e) {
+                    System.err.println("Failed to parse secondary color: " + e.getMessage());
+                }
             }
         }
 
-        return palette;
+        return new PrimaryColor(plainName, primaryColor, secondaryColors);
     }
 
-    private void addShades(@NotNull List<PaletteColor> palette, @NotNull String name, @NotNull String hex) {
-        for (int i = 0; i < SHADES.size(); i++) {
-            Shade shade = SHADES.get(i);
-            String shadedHex = shadeHex(hex, shade.factor());
-            palette.add(new PaletteColor(name, shade.name(), i, shadedHex, HMCCServerUtils.hex2Rgb("#" + shadedHex)));
-        }
+    /**
+     * Parses a single secondary color from a configuration node
+     */
+    private static SecondaryColor parseSecondaryColor(ConfigurationNode node) {
+        // Get secondary color name (with MiniMessage formatting)
+        String nameWithFormatting = node.node("name").getString("");
+        Component nameComponent = MiniMessage.miniMessage().deserialize(nameWithFormatting);
+        String plainName = extractPlainText(nameComponent);
+
+        // Get secondary color hex value
+        String colorHex = node.node("color").getString("#FFFFFF");
+        Color secondaryColor = HMCCServerUtils.hex2Rgb(colorHex);
+
+        return new SecondaryColor(plainName, secondaryColor);
     }
 
-    private static String shadeHex(@NotNull String baseHex, double factor) {
-        int rgb = Integer.parseInt(baseHex, 16);
-        int red = clampColorChannel(Math.round(((rgb >> 16) & 0xFF) * factor));
-        int green = clampColorChannel(Math.round(((rgb >> 8) & 0xFF) * factor));
-        int blue = clampColorChannel(Math.round((rgb & 0xFF) * factor));
-        return String.format(Locale.ROOT, "%02X%02X%02X", red, green, blue);
+    /**
+     * Extracts plain text from a Component (removes MiniMessage formatting)
+     */
+    private static String extractPlainText(Component component) {
+        // Use PlainTextComponentSerializer to extract plain text
+        return net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                .serialize(component);
     }
 
-    private static int clampColorChannel(long value) {
-        return (int) Math.max(0, Math.min(255, value));
-    }
 
-    private static String normalizeHex(@Nullable String rawHex) {
-        if (rawHex == null) return "FFFFFF";
+    public record PrimaryColor(String name, Color color, List<SecondaryColor> secondaryColors) {}
 
-        String value = rawHex.trim().toUpperCase(Locale.ROOT);
-        if (value.startsWith("#")) value = value.substring(1);
-        else if (value.startsWith("0X")) value = value.substring(2);
-
-        if (value.length() != 6) return "FFFFFF";
-        for (int i = 0; i < value.length(); i++) {
-            if (Character.digit(value.charAt(i), 16) < 0) return "FFFFFF";
-        }
-        return value;
-    }
-
-    private boolean isValidSlot(int slot) {
-        return slot >= 0 && slot < ROWS * ROW_SIZE;
-    }
-
-    private static @Nullable ItemStack deserializeItem(@NotNull ConfigurationNode node) {
-        ItemStack item = deserializeRawItem(node);
-        if (item == null || item.getType() == Material.AIR) return null;
-        return item;
-    }
-
-    private static @Nullable ItemStack deserializeRawItem(@NotNull ConfigurationNode node) {
-        if (node.virtual()) return null;
-        try {
-            return ItemSerializer.INSTANCE.deserialize(ItemStack.class, node);
-        } catch (SerializationException e) {
-            e.printStackTrace();
-            return null;
-        }
-    }
-
-    private static List<String> getStringList(@NotNull ConfigurationNode node) {
-        if (node.virtual()) return List.of();
-        try {
-            List<String> list = node.getList(String.class);
-            return list == null ? List.of() : list;
-        } catch (SerializationException e) {
-            e.printStackTrace();
-            return List.of();
-        }
-    }
-
-    private record Shade(String name, double factor) {}
-
-    private record DefaultColor(String name, String hex) {}
-
-    public record PaletteColor(String name, String shadeName, int shade, String hex, Color color) {}
+    public record SecondaryColor(String name, Color color) {}
 }
+

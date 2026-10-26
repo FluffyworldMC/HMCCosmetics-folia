@@ -21,7 +21,7 @@ import java.util.stream.Stream;
 
 public class Menus {
 
-    private static final List<String> FILES_TO_IGNORE = List.of("internal_dye_menu.yml");
+    private static final List<String> FILES_TO_IGNORE = List.of("internal_dye_menu.yml", "palette_dye_menu.yml");
 
     private static final HashMap<String, Menu> MENUS = new HashMap<>();
     private static final HashMap<UUID, Long> COOLDOWNS = new HashMap<>();
