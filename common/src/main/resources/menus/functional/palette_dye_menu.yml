@@ -20,8 +20,8 @@
 #   Palette items: {color_name} {shade_name} {shade} {hex} {hex_code} {color}
 #                  {page} {pages}
 #   Navigation:    {page} {pages} {target_page}
-#   Title:         {page} {pages} {target_page} (title is set in config.yml,
-#                  under dye-menu.title)
+#   Title:         {page} {pages} {target_page} (menu.title below, or
+#                  dye-menu.title in config.yml when menu.title is blank)
 #
 # {hex}      -> FF0000
 # {hex_code} -> #FF0000
@@ -42,6 +42,8 @@
 mode: palette
 
 menu:
+  # Title of this menu. Leave blank to use dye-menu.title from config.yml.
+  title: "<white>Colors"
   # 1 to 6 rows.
   rows: 6
   # Slots for the cosmetic being dyed (input) and the preview (output).
