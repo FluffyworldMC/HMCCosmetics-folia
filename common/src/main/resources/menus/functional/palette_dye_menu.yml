@@ -6,7 +6,7 @@
 #
 # It is a paginated palette. By default it uses 6 rows:
 #
-#   Row 1 (slots 0-8)  : [<] [ ] [ ] [ ] [Custom] [ ] [ ] [ ] [>]
+#   Row 1 (slots 0-8)  : [<] [ ] [ ] [ ] [Custom] [ ] [Back] [ ] [>]
 #   Row 2 (slots 9-17) : [ ] [Input] [ ] [ ] [ ] [ ] [ ] [Output] [ ]
 #   Row 3-6 (18-53)    : 36 color slots
 #
@@ -34,6 +34,13 @@
 #   model-id: "my_items:color_swatch"     <- string item model (1.21.4+)
 # ============================================================================
 
+# ============================================================================
+# Palette source mode:
+#   palette -> generate entries from "base-colors" using "shades" (default)
+#   custom  -> use the "colors" list exactly as written, one entry per color
+#              (no generated shades; one color = one item in the menu)
+mode: palette
+
 menu:
   # 1 to 6 rows.
   rows: 6
@@ -49,6 +56,13 @@ menu:
   # Navigation buttons. Set a slot to -1 to hide it.
   previous-slot: 0
   next-slot: 8
+  # Back button that returns to the internal dye menu. Set to -1 to hide it.
+  back-slot: 6
+  back-item:
+    material: ARROW
+    name: "<white>Back"
+    lore:
+      - "<gray>Return to the color menu"
 
   previous-item:
     material: MAGENTA_GLAZED_TERRACOTTA
@@ -66,8 +80,9 @@ menu:
   next-disabled:
     material: GRAY_STAINED_GLASS_PANE
     name: " "
-  # Optional item used to fill the empty palette slots. Remove this section to
-  # leave the slots empty instead. Use material: AIR to do the same.
+  # Optional item used to fill the empty palette slots. This is the "gray
+  # stained glass" that fills the rest of the page when you define only a few
+  # colors. Remove this section (or use material: AIR) to leave them empty.
   filler:
     material: GRAY_STAINED_GLASS_PANE
     name: " "
@@ -101,9 +116,47 @@ shades:
   - name: "Light"
     factor: 1.25
 
-# Base colors, in the order they are shown in the menu.
-# Each base color generates one entry per shade.
+# Only used when mode: custom. Each entry is exactly one palette item, so if
+# you define one color only one item is shown. The rest of the page is filled
+# with "menu.filler" above.
+#
+# "name" is used for {color_name}. "display-name" and "lore" are optional and
+# override the shared color-item template. "item" is optional and overrides the
+# icon (material / model-data / model-id).
+#
+# colors:
+#   neon-pink:
+#     name: "Neon Pink"
+#     color: "#FF1493"
+#     display-name: "<#FF1493>Neon Pink"
+#     lore:
+#       - "<gray>My custom color"
+#       - "<gray>Hex: <white>#{hex}"
+#     item:
+#       material: LEATHER_HORSE_ARMOR
+#       model-data: 10396
+#
+# You can also use a list instead of a map:
+#   colors:
+#     - name: "Neon Pink"
+#       color: "#FF1493"
+#     - name: "Ocean Blue"
+#       color: "#0066CC"
+colors: []
+
+# Base colors, in the order they are shown in the menu (mode: palette).
+# Each base color generates one entry per shade (see "shades" above).
 # The name is plain text; the color-item template above tints it with {hex}.
+#
+# You can add your own colors here. To show only a single entry (no shades)
+# for a color, add "shades: false" to it. You can also pick specific shades
+# by name, e.g. "shades: [ "Base" ]" or "shades: [ "Dark", "Light" ]".
+#
+#   neon-pink:
+#     name: "Neon Pink"
+#     color: "#FF1493"
+#     shades: false
+#
 base-colors:
   red:
     name: "Red"

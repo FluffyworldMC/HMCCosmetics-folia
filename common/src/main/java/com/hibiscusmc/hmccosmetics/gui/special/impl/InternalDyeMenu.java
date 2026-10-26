@@ -291,7 +291,7 @@ public class InternalDyeMenu implements DyeMenu {
                     return;
                 }
 
-                PALETTE_MENU.openMenu(viewer, cosmeticHolder, cosmetic);
+                PALETTE_MENU.openMenu(viewer, cosmeticHolder, cosmetic, () -> openMenu(viewer, cosmeticHolder, cosmetic));
             });
             gui.setItem(CUSTOM_COLOR_SLOT, customColorGuiItem);
         }

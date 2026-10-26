@@ -51,6 +51,12 @@ final class PaletteDyeMenu implements DyeMenu {
             "<gray>Click to preview"
     );
 
+    private static final String DEFAULT_CUSTOM_NAME = "<#{hex}>{color_name}";
+    private static final List<String> DEFAULT_CUSTOM_LORE = List.of(
+            "<gray>Hex: <white>#{hex}",
+            "<gray>Click to preview"
+    );
+
     private static final List<DefaultColor> DEFAULT_BASE_COLORS = List.of(
             new DefaultColor("Red", "FF0000"),
             new DefaultColor("Orange", "FFA500"),
@@ -66,6 +72,8 @@ final class PaletteDyeMenu implements DyeMenu {
             new DefaultColor("Brown", "8B4513")
     );
 
+    private static final List<Shade> SINGLE_SHADE = List.of(new Shade("Base", 1.0D));
+
     private List<PaletteColor> COLORS = List.of();
     private final List<Shade> SHADES = new ArrayList<>();
     private final List<Integer> PALETTE_SLOTS = new ArrayList<>();
@@ -75,6 +83,7 @@ final class PaletteDyeMenu implements DyeMenu {
     private int CONFIGURED_PAGE_SIZE = 36;
     private int PREVIOUS_SLOT = 0;
     private int NEXT_SLOT = 8;
+    private int BACK_SLOT = 6;
 
     private int INPUT_SLOT;
     private int OUTPUT_SLOT;
@@ -85,11 +94,14 @@ final class PaletteDyeMenu implements DyeMenu {
     private @Nullable ItemStack NEXT_ITEM = null;
     private @Nullable ItemStack PREVIOUS_DISABLED_ITEM = null;
     private @Nullable ItemStack NEXT_DISABLED_ITEM = null;
+    private @Nullable ItemStack BACK_ITEM = null;
     private @Nullable ItemStack FILLER_ITEM = null;
 
     private @Nullable ItemStack COLOR_ITEM = null;
     private @Nullable String COLOR_NAME_TEMPLATE = null;
     private @Nullable List<String> COLOR_LORE_TEMPLATE = null;
+
+    private String MODE = "palette";
 
     private boolean CUSTOM_COLOR_ENABLED = true;
     private int CUSTOM_COLOR_SLOT = 4;
@@ -133,6 +145,7 @@ final class PaletteDyeMenu implements DyeMenu {
         CONFIGURED_PAGE_SIZE = Math.max(1, menuNode.node("color-page-size").getInt(36));
         PREVIOUS_SLOT = menuNode.node("previous-slot").getInt(0);
         NEXT_SLOT = menuNode.node("next-slot").getInt(8);
+        BACK_SLOT = menuNode.node("back-slot").getInt(6);
 
         PREVIOUS_ITEM = deserializeRawItem(menuNode.node("previous-item"));
         if (PREVIOUS_ITEM == null) PREVIOUS_ITEM = createNavigationItem(true);
@@ -142,6 +155,8 @@ final class PaletteDyeMenu implements DyeMenu {
         if (PREVIOUS_DISABLED_ITEM == null) PREVIOUS_DISABLED_ITEM = createDisabledNavigationItem();
         NEXT_DISABLED_ITEM = deserializeRawItem(menuNode.node("next-disabled"));
         if (NEXT_DISABLED_ITEM == null) NEXT_DISABLED_ITEM = createDisabledNavigationItem();
+        BACK_ITEM = deserializeRawItem(menuNode.node("back-item"));
+        if (BACK_ITEM == null) BACK_ITEM = createBackItem();
         FILLER_ITEM = deserializeRawItem(menuNode.node("filler"));
 
         ConfigurationNode colorItemNode = config.node("color-item");
@@ -153,8 +168,14 @@ final class PaletteDyeMenu implements DyeMenu {
         ConfigurationNode loreNode = colorItemNode.node("lore");
         COLOR_LORE_TEMPLATE = loreNode.virtual() ? DEFAULT_COLOR_LORE : getStringList(loreNode);
 
+        MODE = config.node("mode").getString("palette").trim().toLowerCase(Locale.ROOT);
+        if (!MODE.equals("palette") && !MODE.equals("custom")) {
+            MessagesUtil.sendDebugMessages("Unknown palette mode '" + MODE + "' in palette_dye_menu.yml. Valid modes are 'palette' and 'custom'. Falling back to 'palette'.", Level.WARNING);
+            MODE = "palette";
+        }
+
         loadShades(config.node("shades"));
-        COLORS = buildPalette(config.node("base-colors"));
+        COLORS = isCustomMode() ? buildCustomColors(config.node("colors")) : buildPalette(config.node("base-colors"));
 
         INPUT_SLOT = menuNode.node("input-slot").virtual()
                 ? Settings.getDyeMenuInputSlot()
@@ -228,6 +249,7 @@ final class PaletteDyeMenu implements DyeMenu {
                 || CUSTOM_COLOR_SLOT == OUTPUT_SLOT
                 || CUSTOM_COLOR_SLOT == PREVIOUS_SLOT
                 || CUSTOM_COLOR_SLOT == NEXT_SLOT
+                || CUSTOM_COLOR_SLOT == BACK_SLOT
                 || PALETTE_SLOTS.contains(CUSTOM_COLOR_SLOT)) {
             CUSTOM_COLOR_ENABLED = false;
             MessagesUtil.sendDebugMessages("Custom color slot " + CUSTOM_COLOR_SLOT + " overlaps another menu item, so the custom color button has been disabled.", Level.WARNING);
@@ -252,7 +274,7 @@ final class PaletteDyeMenu implements DyeMenu {
                 break;
             }
 
-            if (slot == INPUT_SLOT || slot == OUTPUT_SLOT || slot == PREVIOUS_SLOT || slot == NEXT_SLOT || (reserveCustomSlot && slot == CUSTOM_COLOR_SLOT)) {
+            if (slot == INPUT_SLOT || slot == OUTPUT_SLOT || slot == PREVIOUS_SLOT || slot == NEXT_SLOT || slot == BACK_SLOT || (reserveCustomSlot && slot == CUSTOM_COLOR_SLOT)) {
                 if (warn) MessagesUtil.sendDebugMessages("Color slot " + slot + " overlaps another menu item, so it has been skipped.", Level.WARNING);
                 continue;
             }
@@ -274,15 +296,22 @@ final class PaletteDyeMenu implements DyeMenu {
             if (PREVIOUS_SLOT >= 0 && PREVIOUS_SLOT == NEXT_SLOT) {
                 MessagesUtil.sendDebugMessages("previous-slot and next-slot are the same slot (" + PREVIOUS_SLOT + ").", Level.WARNING);
             }
+            if (BACK_SLOT >= 0 && !isValidSlot(BACK_SLOT)) {
+                MessagesUtil.sendDebugMessages("back-slot " + BACK_SLOT + " is outside of the menu.", Level.WARNING);
+            }
         }
     }
 
     @Override
     public void openMenu(@NotNull Player viewer, @NotNull CosmeticHolder cosmeticHolder, @NotNull Cosmetic cosmetic) {
-        openMenu(viewer, cosmeticHolder, cosmetic, null, 0);
+        openMenu(viewer, cosmeticHolder, cosmetic, null);
     }
 
-    private void openMenu(@NotNull Player viewer, @NotNull CosmeticHolder cosmeticHolder, @NotNull Cosmetic cosmetic, @Nullable Color presetColor, int page) {
+    void openMenu(@NotNull Player viewer, @NotNull CosmeticHolder cosmeticHolder, @NotNull Cosmetic cosmetic, @Nullable Runnable backAction) {
+        openMenu(viewer, cosmeticHolder, cosmetic, null, 0, backAction);
+    }
+
+    private void openMenu(@NotNull Player viewer, @NotNull CosmeticHolder cosmeticHolder, @NotNull Cosmetic cosmetic, @Nullable Color presetColor, int page, @Nullable Runnable backAction) {
         if (PALETTE_SLOTS.isEmpty() || COLORS.isEmpty()) {
             MessagesUtil.sendDebugMessages("The palette dye menu has no colors to display. Check menus/functional/palette_dye_menu.yml.", Level.WARNING);
             return;
@@ -291,7 +320,7 @@ final class PaletteDyeMenu implements DyeMenu {
         ItemStack cosmeticItem = cosmetic.getItem();
         if (cosmeticItem == null) return;
 
-        new DyeSession(viewer, cosmeticHolder, cosmetic, cosmeticItem.clone(), presetColor, page).open();
+        new DyeSession(viewer, cosmeticHolder, cosmetic, cosmeticItem.clone(), presetColor, page, backAction).open();
     }
 
     private final class DyeSession {
@@ -303,6 +332,7 @@ final class PaletteDyeMenu implements DyeMenu {
         private final AtomicReference<Color> preview = new AtomicReference<>();
         private final int lastPage;
         private final Gui gui;
+        private final @Nullable Runnable backAction;
 
         private int page;
 
@@ -311,7 +341,8 @@ final class PaletteDyeMenu implements DyeMenu {
                            @NotNull Cosmetic cosmetic,
                            @NotNull ItemStack cosmeticItem,
                            @Nullable Color presetColor,
-                           int page) {
+                           int page,
+                           @Nullable Runnable backAction) {
             this.viewer = viewer;
             this.cosmeticHolder = cosmeticHolder;
             this.cosmetic = cosmetic;
@@ -319,6 +350,7 @@ final class PaletteDyeMenu implements DyeMenu {
             this.preview.set(presetColor);
             this.lastPage = Math.max(0, (COLORS.size() - 1) / PALETTE_SLOTS.size());
             this.page = Math.max(0, Math.min(page, lastPage));
+            this.backAction = backAction;
             this.gui = buildGui();
         }
 
@@ -344,6 +376,19 @@ final class PaletteDyeMenu implements DyeMenu {
 
             if (CUSTOM_COLOR_ENABLED) {
                 created.setItem(CUSTOM_COLOR_SLOT, createCustomColorButton());
+            }
+
+            if (BACK_ITEM != null && isValidSlot(BACK_SLOT)) {
+                GuiItem backButton = new GuiItem(processItem(viewer, BACK_ITEM.clone(), pagePlaceholders(page)));
+                backButton.setAction(event -> {
+                    event.setCancelled(true);
+                    if (backAction != null) {
+                        backAction.run();
+                    } else {
+                        created.close(event.getWhoClicked());
+                    }
+                });
+                created.setItem(BACK_SLOT, backButton);
             }
 
             return created;
@@ -461,25 +506,42 @@ final class PaletteDyeMenu implements DyeMenu {
                         CUSTOM_COLOR_DIALOG_CANCEL,
                         CUSTOM_COLOR_DIALOG_INITIAL,
                         CUSTOM_COLOR_DIALOG_MAX_LENGTH,
-                        color -> openMenu(viewer, cosmeticHolder, cosmetic, color, returnPage)
+                        color -> openMenu(viewer, cosmeticHolder, cosmetic, color, returnPage, backAction)
                 );
             });
             return guiItem;
         }
 
         private ItemStack buildColorItem(@NotNull PaletteColor paletteColor) {
-            ItemStack item = COLOR_ITEM != null ? COLOR_ITEM.clone() : cosmeticItem.clone();
+            ItemStack item;
+            if (paletteColor.itemTemplate() != null) {
+                item = paletteColor.itemTemplate().clone();
+            } else if (COLOR_ITEM != null) {
+                item = COLOR_ITEM.clone();
+            } else {
+                item = cosmeticItem.clone();
+            }
             item = NMSHandlers.getHandler().getUtilHandler().setColor(item, paletteColor.color());
+
+            String nameTemplate = paletteColor.displayName();
+            if (nameTemplate == null) {
+                nameTemplate = isCustomMode() ? DEFAULT_CUSTOM_NAME : COLOR_NAME_TEMPLATE;
+            }
+
+            List<String> loreTemplate = paletteColor.lore();
+            if (loreTemplate == null) {
+                loreTemplate = isCustomMode() ? DEFAULT_CUSTOM_LORE : COLOR_LORE_TEMPLATE;
+            }
 
             Map<String, String> placeholders = colorPlaceholders(paletteColor);
             ItemMeta itemMeta = item.getItemMeta();
             if (itemMeta != null) {
-                if (COLOR_NAME_TEMPLATE != null) {
-                    itemMeta.displayName(formatText(COLOR_NAME_TEMPLATE, placeholders));
+                if (nameTemplate != null) {
+                    itemMeta.displayName(formatText(nameTemplate, placeholders));
                 }
-                if (COLOR_LORE_TEMPLATE != null && !COLOR_LORE_TEMPLATE.isEmpty()) {
-                    List<Component> lore = new ArrayList<>(COLOR_LORE_TEMPLATE.size());
-                    for (String line : COLOR_LORE_TEMPLATE) {
+                if (loreTemplate != null && !loreTemplate.isEmpty()) {
+                    List<Component> lore = new ArrayList<>(loreTemplate.size());
+                    for (String line : loreTemplate) {
                         lore.add(formatText(line, placeholders));
                     }
                     itemMeta.lore(lore);
@@ -547,6 +609,19 @@ final class PaletteDyeMenu implements DyeMenu {
                     .decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE));
             itemMeta.lore(List.of(
                     MiniMessage.miniMessage().deserialize("<gray>Page {target_page}/{pages}")
+                            .decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE)
+            ));
+        });
+        return item;
+    }
+
+    private static ItemStack createBackItem() {
+        ItemStack item = new ItemStack(Material.ARROW);
+        item.editMeta(itemMeta -> {
+            itemMeta.displayName(MiniMessage.miniMessage().deserialize("<white>Back")
+                    .decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE));
+            itemMeta.lore(List.of(
+                    MiniMessage.miniMessage().deserialize("<gray>Return to the color menu")
                             .decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE)
             ));
         });
@@ -647,6 +722,62 @@ final class PaletteDyeMenu implements DyeMenu {
      * Flattens the configured base colors into a single palette by generating one entry per
      * shade, in the same order as the ArtMap artkit palette.
      */
+    private boolean isCustomMode() {
+        return "custom".equals(MODE);
+    }
+
+    /**
+     * Builds the palette from the "colors" list when mode is "custom". Each entry
+     * becomes exactly one palette item, with no generated shades.
+     */
+    private List<PaletteColor> buildCustomColors(@NotNull ConfigurationNode colorsNode) {
+        List<PaletteColor> palette = new ArrayList<>();
+
+        if (colorsNode.virtual()) {
+            MessagesUtil.sendDebugMessages("palette_dye_menu.yml has mode: custom but no \"colors\" section. Add at least one color or switch back to mode: palette.", Level.WARNING);
+            return palette;
+        }
+
+        if (colorsNode.isList()) {
+            for (ConfigurationNode colorNode : colorsNode.childrenList()) {
+                addCustomColor(palette, null, colorNode);
+            }
+        } else {
+            for (Map.Entry<Object, ? extends ConfigurationNode> entry : colorsNode.childrenMap().entrySet()) {
+                addCustomColor(palette, String.valueOf(entry.getKey()), entry.getValue());
+            }
+        }
+
+        if (palette.isEmpty()) {
+            MessagesUtil.sendDebugMessages("palette_dye_menu.yml has mode: custom but no valid colors were found.", Level.WARNING);
+        }
+
+        return palette;
+    }
+
+    private void addCustomColor(@NotNull List<PaletteColor> palette, @Nullable String key, @NotNull ConfigurationNode colorNode) {
+        String name = colorNode.node("name").getString("");
+        if (name.isBlank()) name = key != null ? key : "Color";
+
+        String hex = normalizeHex(colorNode.node("color").getString("#FFFFFF"));
+
+        String displayName = colorNode.node("display-name").getString("");
+        ConfigurationNode loreNode = colorNode.node("lore");
+        List<String> lore = loreNode.virtual() ? null : getStringList(loreNode);
+        ItemStack itemTemplate = deserializeRawItem(colorNode.node("item"));
+
+        palette.add(new PaletteColor(
+                name,
+                "",
+                0,
+                hex,
+                HMCCServerUtils.hex2Rgb("#" + hex),
+                displayName.isBlank() ? null : displayName,
+                lore,
+                itemTemplate
+        ));
+    }
+
     private List<PaletteColor> buildPalette(@NotNull ConfigurationNode baseColorsNode) {
         List<PaletteColor> palette = new ArrayList<>();
 
@@ -656,24 +787,78 @@ final class PaletteDyeMenu implements DyeMenu {
             if (name.isBlank()) name = String.valueOf(entry.getKey());
 
             String hex = normalizeHex(colorNode.node("color").getString("#FFFFFF"));
-            addShades(palette, name, hex);
+            addShades(palette, name, hex, resolveShades(colorNode.node("shades")));
         }
 
         if (palette.isEmpty()) {
             MessagesUtil.sendDebugMessages("No base colors were found in palette_dye_menu.yml, so the built-in palette is being used. Delete the file to regenerate it.", Level.WARNING);
             for (DefaultColor defaultColor : DEFAULT_BASE_COLORS) {
-                addShades(palette, defaultColor.name(), defaultColor.hex());
+                addShades(palette, defaultColor.name(), defaultColor.hex(), SHADES);
             }
         }
 
         return palette;
     }
 
-    private void addShades(@NotNull List<PaletteColor> palette, @NotNull String name, @NotNull String hex) {
-        for (int i = 0; i < SHADES.size(); i++) {
-            Shade shade = SHADES.get(i);
+    /**
+     * Resolves the shades used by a single base color.
+     * <ul>
+     *   <li>missing -> every shade from the global "shades" list</li>
+     *   <li>false / "none" / "single" -> one unscaled entry</li>
+     *   <li>a list of shade names -> only those shades, e.g. [ "Base" ]</li>
+     *   <li>a single shade name -> only that shade</li>
+     * </ul>
+     */
+    private List<Shade> resolveShades(@NotNull ConfigurationNode node) {
+        if (node.virtual()) return SHADES;
+
+        if (node.isList()) {
+            List<String> requested = getStringList(node);
+            if (requested.isEmpty()) return SHADES;
+
+            List<Shade> resolved = new ArrayList<>();
+            for (String shadeName : requested) {
+                Shade match = findShade(shadeName);
+                if (match != null && !resolved.contains(match)) resolved.add(match);
+            }
+            if (resolved.isEmpty()) {
+                MessagesUtil.sendDebugMessages("Unknown shade list for a base color in palette_dye_menu.yml, using all shades.", Level.WARNING);
+                return SHADES;
+            }
+            return resolved;
+        }
+
+        Object raw = node.raw();
+        if (raw instanceof Boolean enabled) {
+            return enabled ? SHADES : SINGLE_SHADE;
+        }
+
+        String value = node.getString("");
+        if (value.equalsIgnoreCase("false") || value.equalsIgnoreCase("none") || value.equalsIgnoreCase("single")) {
+            return SINGLE_SHADE;
+        }
+        if (value.equalsIgnoreCase("true") || value.isBlank()) return SHADES;
+
+        Shade match = findShade(value);
+        if (match != null) return List.of(match);
+
+        MessagesUtil.sendDebugMessages("Unknown shade '" + value + "' in palette_dye_menu.yml, using all shades.", Level.WARNING);
+        return SHADES;
+    }
+
+    private @Nullable Shade findShade(@NotNull String name) {
+        for (Shade shade : SHADES) {
+            if (shade.name().equalsIgnoreCase(name.trim())) return shade;
+        }
+        return null;
+    }
+
+    private void addShades(@NotNull List<PaletteColor> palette, @NotNull String name, @NotNull String hex, @NotNull List<Shade> shades) {
+        for (Shade shade : shades) {
+            int index = SHADES.indexOf(shade);
+            if (index < 0) index = 0;
             String shadedHex = shadeHex(hex, shade.factor());
-            palette.add(new PaletteColor(name, shade.name(), i, shadedHex, HMCCServerUtils.hex2Rgb("#" + shadedHex)));
+            palette.add(new PaletteColor(name, shade.name(), index, shadedHex, HMCCServerUtils.hex2Rgb("#" + shadedHex), null, null, null));
         }
     }
 
@@ -738,5 +923,14 @@ final class PaletteDyeMenu implements DyeMenu {
 
     private record DefaultColor(String name, String hex) {}
 
-    public record PaletteColor(String name, String shadeName, int shade, String hex, Color color) {}
+    public record PaletteColor(
+            String name,
+            String shadeName,
+            int shade,
+            String hex,
+            Color color,
+            @Nullable String displayName,
+            @Nullable List<String> lore,
+            @Nullable ItemStack itemTemplate
+    ) {}
 }
