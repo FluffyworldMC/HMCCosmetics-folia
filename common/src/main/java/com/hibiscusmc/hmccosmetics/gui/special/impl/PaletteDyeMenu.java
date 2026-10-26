@@ -51,12 +51,6 @@ final class PaletteDyeMenu implements DyeMenu {
             "<gray>Click to preview"
     );
 
-    private static final String DEFAULT_CUSTOM_NAME = "<#{hex}>{color_name}";
-    private static final List<String> DEFAULT_CUSTOM_LORE = List.of(
-            "<gray>Hex: <white>#{hex}",
-            "<gray>Click to preview"
-    );
-
     private static final List<DefaultColor> DEFAULT_BASE_COLORS = List.of(
             new DefaultColor("Red", "FF0000"),
             new DefaultColor("Orange", "FFA500"),
@@ -524,14 +518,10 @@ final class PaletteDyeMenu implements DyeMenu {
             item = NMSHandlers.getHandler().getUtilHandler().setColor(item, paletteColor.color());
 
             String nameTemplate = paletteColor.displayName();
-            if (nameTemplate == null) {
-                nameTemplate = isCustomMode() ? DEFAULT_CUSTOM_NAME : COLOR_NAME_TEMPLATE;
-            }
+            if (nameTemplate == null) nameTemplate = COLOR_NAME_TEMPLATE;
 
             List<String> loreTemplate = paletteColor.lore();
-            if (loreTemplate == null) {
-                loreTemplate = isCustomMode() ? DEFAULT_CUSTOM_LORE : COLOR_LORE_TEMPLATE;
-            }
+            if (loreTemplate == null) loreTemplate = COLOR_LORE_TEMPLATE;
 
             Map<String, String> placeholders = colorPlaceholders(paletteColor);
             ItemMeta itemMeta = item.getItemMeta();
