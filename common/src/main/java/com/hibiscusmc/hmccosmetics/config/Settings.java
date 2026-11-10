@@ -50,7 +50,15 @@ public class Settings {
     private static final String COSMETIC_BACKPACK_INTERCEPT_PASSENGER_PACKET_PATH = "backpack-intercept-passenger-packets";
     private static final String COSMETIC_DESTROY_LOOSE_COSMETIC_PATH = "destroy-loose-cosmetics";
     private static final String COSMETIC_BALLOON_HEAD_FORWARD_PATH = "balloon-head-forward";
+    private static final String COSMETIC_BALLOON_HEAD_FORWARD_LEGACY_PATH = "balloon-head-unmoving";
     private static final String COSMETIC_BALLOON_DEFAULT_SHOW_LEAD_PATH = "balloon-lead-default";
+    private static final String BALLOON_ANIMATION_PATH = "balloon-animation";
+    private static final String BALLOON_ANIMATION_BOB_HEIGHT_PATH = "bob-height";
+    private static final String BALLOON_ANIMATION_BOB_SPEED_PATH = "bob-speed";
+    private static final String BALLOON_ANIMATION_SWAY_ANGLE_PATH = "sway-angle";
+    private static final String BALLOON_ANIMATION_SWAY_SPEED_PATH = "sway-speed";
+    private static final String BALLOON_ANIMATION_INTERVAL_PATH = "update-interval";
+    private static final String BALLOON_ANIMATION_FACE_PLAYER_PATH = "face-player";
     private static final String COSMETIC_OFFHAND_PREVENT_SWAPPING = "offhand-prevent-swapping";
     private static final String MENU_SETTINGS_PATH = "menu-settings";
     private static final String MENU_CLICK_COOLDOWN_PATH = "click-cooldown";
@@ -123,6 +131,20 @@ public class Settings {
     private static boolean balloonHeadForward;
     @Getter
     private static boolean balloonDefaultShowLead;
+    @Getter
+    private static boolean balloonAnimationEnabled;
+    @Getter
+    private static double balloonAnimationBobHeight;
+    @Getter
+    private static double balloonAnimationBobSpeed;
+    @Getter
+    private static double balloonAnimationSwayAngle;
+    @Getter
+    private static double balloonAnimationSwaySpeed;
+    @Getter
+    private static int balloonAnimationInterval;
+    @Getter
+    private static boolean balloonAnimationFacePlayer;
     @Getter
     private static boolean backpackPreventDarkness;
     @Getter
@@ -239,9 +261,19 @@ public class Settings {
         tickPeriod = cosmeticSettings.node(TICK_PERIOD_PATH).getInt(-1);
         engine = PlayerSearchManager.SearchEngine.valueOf(cosmeticSettings.node(PLAYER_SEARCH_IMPLEMENTATION).getString("BUKKIT").toUpperCase());
         viewDistance = cosmeticSettings.node(VIEW_DISTANCE_PATH).getInt(-3);
-        balloonHeadForward = cosmeticSettings.node(COSMETIC_BALLOON_HEAD_FORWARD_PATH).getBoolean(false);
+        balloonHeadForward = cosmeticSettings.node(COSMETIC_BALLOON_HEAD_FORWARD_PATH)
+                .getBoolean(cosmeticSettings.node(COSMETIC_BALLOON_HEAD_FORWARD_LEGACY_PATH).getBoolean(false));
         balloonDefaultShowLead = cosmeticSettings.node(COSMETIC_BALLOON_DEFAULT_SHOW_LEAD_PATH).getBoolean(true);
         backpackPreventDarkness = cosmeticSettings.node(BACKPACK_PREVENT_DARKNESS_PATH).getBoolean(true);
+
+        final ConfigurationNode balloonAnimation = cosmeticSettings.node(BALLOON_ANIMATION_PATH);
+        balloonAnimationEnabled = balloonAnimation.node(ENABLED_PATH).getBoolean(true);
+        balloonAnimationBobHeight = Math.max(0.0, balloonAnimation.node(BALLOON_ANIMATION_BOB_HEIGHT_PATH).getDouble(0.1));
+        balloonAnimationBobSpeed = Math.max(0.0, balloonAnimation.node(BALLOON_ANIMATION_BOB_SPEED_PATH).getDouble(0.15));
+        balloonAnimationSwayAngle = Math.max(0.0, balloonAnimation.node(BALLOON_ANIMATION_SWAY_ANGLE_PATH).getDouble(10.0));
+        balloonAnimationSwaySpeed = Math.max(0.0, balloonAnimation.node(BALLOON_ANIMATION_SWAY_SPEED_PATH).getDouble(0.08));
+        balloonAnimationInterval = Math.max(1, balloonAnimation.node(BALLOON_ANIMATION_INTERVAL_PATH).getInt(2));
+        balloonAnimationFacePlayer = balloonAnimation.node(BALLOON_ANIMATION_FACE_PLAYER_PATH).getBoolean(true);
 
         ConfigurationNode menuSettings = source.node(MENU_SETTINGS_PATH);
 

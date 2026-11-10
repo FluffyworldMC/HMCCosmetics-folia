@@ -2,6 +2,7 @@ package com.hibiscusmc.hmccosmetics.user.manager;
 
 import com.github.Anon8281.universalScheduler.UniversalScheduler;
 import com.github.Anon8281.universalScheduler.scheduling.schedulers.TaskScheduler;
+import com.github.Anon8281.universalScheduler.scheduling.tasks.MyScheduledTask;
 import com.hibiscusmc.hmccosmetics.HMCCosmeticsPlugin;
 import com.hibiscusmc.hmccosmetics.util.HMCCServerUtils;
 import com.hibiscusmc.hmccosmetics.config.Settings;
@@ -25,17 +26,22 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.util.EulerAngle;
 import org.bukkit.util.Vector;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
 public class UserBalloonManager {
 
     private static final int MAX_TELEPORT_RETRIES = 100;
+    private static final Set<UserBalloonManager> ANIMATED_BALLOONS = ConcurrentHashMap.newKeySet();
+    private static MyScheduledTask animationTask;
 
     private final CosmeticUser user;
     @Getter
@@ -50,6 +56,19 @@ public class UserBalloonManager {
      */
     private volatile Location location;
     /**
+     * Location the balloon should follow, without the floating animation applied. Kept separate so
+     * the animation can bob around it without drifting away from the player.
+     */
+    private volatile Location baseLocation;
+    /**
+     * Floating animation state. The animation runs on one shared task and only updates these
+     * fields, the actual entity movement still goes through the region-aware teleport queue.
+     */
+    private volatile double bobPhase;
+    private volatile double swayPhase;
+    private volatile float animationSway;
+    private int animationTicks;
+    /**
      * Teleport bookkeeping. Region-threaded servers only allow one region handoff per entity at a
      * time and reject teleports made from inside a move event, so requests are coalesced and
      * executed on the balloon's own region thread on the next tick.
@@ -58,12 +77,13 @@ public class UserBalloonManager {
     private boolean teleportScheduled;
     private boolean teleportInFlight;
     private boolean teleportRetryScheduled;
-    private boolean removed;
+    private volatile boolean removed;
     private int teleportRetries;
 
     public UserBalloonManager(CosmeticUser user, @NotNull Location location) {
         this.user = user;
         this.location = location.clone();
+        this.baseLocation = location.clone();
         this.pufferfish = new UserBalloonPufferfish(user.getUniqueId(), NMSHandlers.getHandler().getUtilHandler().getNextEntityId(location.getWorld()), UUID.randomUUID());
         this.modelEntity = location.getWorld().spawn(location, ArmorStand.class, (e) -> {
             e.setInvisible(true);
@@ -76,6 +96,35 @@ public class UserBalloonManager {
             e.setAI(false);
             e.getPersistentDataContainer().set(HMCCServerUtils.getCosmemeticMobKey(), PersistentDataType.BOOLEAN, true);
         });
+
+        ANIMATED_BALLOONS.add(this);
+        ensureAnimationTask();
+    }
+
+    /**
+     * Starts the single shared animation task used by every balloon. Keeping one task instead of
+     * one task per balloon is much lighter, and running it on the global scheduler means it keeps
+     * working while a balloon is retired during a cross-region handoff.
+     */
+    private static void ensureAnimationTask() {
+        synchronized (UserBalloonManager.class) {
+            if (animationTask != null && !animationTask.isCancelled()) return;
+
+            animationTask = HMCCosmeticsPlugin.getScheduler().runTaskTimer(
+                    HMCCosmeticsPlugin.getInstance(),
+                    () -> {
+                        for (final UserBalloonManager balloon : ANIMATED_BALLOONS) {
+                            try {
+                                balloon.tickAnimation();
+                            } catch (Exception exception) {
+                                MessagesUtil.sendDebugMessages("Balloon animation failed: " + exception.getMessage(), Level.WARNING);
+                            }
+                        }
+                    },
+                    1L,
+                    1L
+            );
+        }
     }
 
     public void spawnModel(@NotNull CosmeticBalloonType cosmeticBalloonType, Color color) {
@@ -124,6 +173,7 @@ public class UserBalloonManager {
     }
 
     public void remove() {
+        ANIMATED_BALLOONS.remove(this);
         synchronized (this.teleportLock) {
             this.removed = true;
         }
@@ -159,7 +209,8 @@ public class UserBalloonManager {
         if (scheduler.isEntityThread(entity)) {
             removal.run();
         } else {
-            scheduler.runTask(entity, removal);
+            // Retries if the entity is currently retired by a cross-region handoff.
+            HMCCServerUtils.runOnEntityLater(entity, removal, 0L);
         }
     }
 
@@ -245,14 +296,86 @@ public class UserBalloonManager {
     }
 
     public void setLocation(Location location) {
-        this.location = location.clone();
+        if (this.removed) return;
+
+        final Location base = location.clone();
+
+        if (Settings.isBalloonAnimationFacePlayer()) {
+            final Player player = user.getPlayer();
+            if (player != null) {
+                final Location eyes = player.getEyeLocation();
+                final double dx = eyes.getX() - base.getX();
+                final double dz = eyes.getZ() - base.getZ();
+                if (dx * dx + dz * dz > 1.0E-4) {
+                    // Minecraft yaw: 0 = south (+Z), 90 = west (-X).
+                    base.setYaw((float) Math.toDegrees(Math.atan2(-dx, dz)));
+                }
+                base.setPitch(0.0F);
+            }
+        }
+
+        this.baseLocation = base;
+        this.location = currentAnimatedLocation(base);
 
         if (!UniversalScheduler.isFolia && !UniversalScheduler.isCanvas) {
-            HMCCServerUtils.teleport(this.modelEntity, location);
+            applyAnimationPose();
+            HMCCServerUtils.teleport(this.modelEntity, this.location);
             return;
         }
 
         requestTeleport();
+    }
+
+    /**
+     * Advances the floating animation. Called from the shared animation task, which runs on the
+     * global region thread, so this method only updates cached state and then asks the balloon's
+     * own region to move the entity.
+     */
+    private void tickAnimation() {
+        if (this.removed) {
+            ANIMATED_BALLOONS.remove(this);
+            return;
+        }
+        if (!Settings.isBalloonAnimationEnabled()) return;
+        if (this.balloonType == null || this.balloonType == BalloonType.NONE) return;
+        if (Settings.getBalloonAnimationBobHeight() <= 0.0 && Settings.getBalloonAnimationSwayAngle() <= 0.0) return;
+
+        final int interval = Math.max(1, Settings.getBalloonAnimationInterval());
+        if (++this.animationTicks < interval) return;
+        this.animationTicks = 0;
+
+        this.bobPhase += Settings.getBalloonAnimationBobSpeed() * interval;
+        this.swayPhase += Settings.getBalloonAnimationSwaySpeed() * interval;
+        this.animationSway = (float) (Math.sin(this.swayPhase) * Settings.getBalloonAnimationSwayAngle());
+
+        final Location base = this.baseLocation;
+        if (base == null) return;
+
+        final Location target = currentAnimatedLocation(base);
+        this.location = target;
+
+        if (UniversalScheduler.isFolia || UniversalScheduler.isCanvas) {
+            requestTeleport();
+            return;
+        }
+
+        applyAnimationPose();
+        HMCCServerUtils.teleport(this.modelEntity, target);
+    }
+
+    private Location currentAnimatedLocation(final Location base) {
+        if (!Settings.isBalloonAnimationEnabled()) return base.clone();
+        final double bob = Math.sin(this.bobPhase) * Settings.getBalloonAnimationBobHeight();
+        return base.clone().add(0, bob, 0);
+    }
+
+    /**
+     * Applies the sway to the armor stand's head pose, which tilts the balloon item. Must run on the
+     * region thread that owns the balloon.
+     */
+    private void applyAnimationPose() {
+        final float sway = Settings.isBalloonAnimationEnabled() ? this.animationSway : 0.0F;
+        this.modelEntity.setHeadPose(new EulerAngle(0, 0, Math.toRadians(sway)));
     }
 
     /**
@@ -326,6 +449,8 @@ public class UserBalloonManager {
             destination = requestedLocation.clone();
         }
 
+        applyAnimationPose();
+
         try {
             this.modelEntity.teleportAsync(destination).whenComplete((success, throwable) -> {
                 if (throwable != null) {
@@ -336,7 +461,7 @@ public class UserBalloonManager {
                 synchronized (this.teleportLock) {
                     this.teleportInFlight = false;
                     if (Boolean.TRUE.equals(success)) this.teleportRetries = 0;
-                    // A newer setLocation() replaced the cached location while we were teleporting.
+                    // A newer movement or animation update replaced the cached location.
                     movedAgain = !this.removed && this.location != requestedLocation;
                 }
 

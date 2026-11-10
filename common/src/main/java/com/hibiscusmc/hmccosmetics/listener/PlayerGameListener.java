@@ -94,22 +94,46 @@ public class PlayerGameListener implements Listener {
             user.leaveWardrobe(false);
         }
 
-        Player player = event.getPlayer();
-        HMCCosmeticsPlugin.getScheduler().runTaskLater(player, () -> {
-            if (user.getEntity() == null || user.isInWardrobe()) return; // fixes disconnecting when in wardrobe (the entity stuff)
+        final Player player = event.getPlayer();
+        final boolean worldChange = event.getFrom().getWorld() != null
+                && event.getTo() != null
+                && event.getTo().getWorld() != null
+                && !event.getFrom().getWorld().equals(event.getTo().getWorld());
 
-            if (Settings.getDisabledWorlds().contains(user.getEntity().getLocation().getWorld().getName())) {
-                user.hideCosmetics(CosmeticUser.HiddenReason.WORLD);
-            } else {
-                user.showCosmetics(CosmeticUser.HiddenReason.WORLD);
-            }
+        HMCCServerUtils.runOnEntityLater(player, () -> {
+            // Cross-world teleports are handled by onPlayerChangedWorld once the player has
+            // actually arrived in the new world.
+            if (worldChange) return;
+            refreshCosmeticsAfterTeleport(user);
+        }, 4L);
+    }
 
-            user.respawnBackpack();
-            user.respawnBalloon();
-            user.updateCosmetic();
-        }, 4);
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerChangedWorld(PlayerChangedWorldEvent event) {
+        final CosmeticUser user = CosmeticUsers.getUser(event.getPlayer().getUniqueId());
+        if (user == null) return;
 
-        if (event.getCause().equals(PlayerTeleportEvent.TeleportCause.NETHER_PORTAL) || event.getCause().equals(PlayerTeleportEvent.TeleportCause.END_PORTAL)) return;
+        MessagesUtil.sendDebugMessages("Player Changed World Event");
+        // Changing worlds makes the client discard every packet-only entity. The backpack is
+        // packet-only, so it has to be spawned again for the new world.
+        HMCCServerUtils.runOnEntityLater(event.getPlayer(), () -> refreshCosmeticsAfterTeleport(user), 4L);
+    }
+
+    private void refreshCosmeticsAfterTeleport(final CosmeticUser user) {
+        if (user.getEntity() == null || user.isInWardrobe()) return; // fixes disconnecting when in wardrobe (the entity stuff)
+
+        final Player player = user.getPlayer();
+        if (player == null) return;
+
+        if (Settings.getDisabledWorlds().contains(player.getWorld().getName())) {
+            user.hideCosmetics(CosmeticUser.HiddenReason.WORLD);
+        } else {
+            user.showCosmetics(CosmeticUser.HiddenReason.WORLD);
+        }
+
+        user.respawnBackpack();
+        user.respawnBalloon();
+        user.updateCosmetic();
     }
 
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)

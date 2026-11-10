@@ -101,7 +101,7 @@ public class CosmeticBalloonType extends Cosmetic implements CosmeticUpdateBehav
 
         if (entity.getLocation().getWorld() != userBalloonManager.getLocation().getWorld()) {
             userBalloonManager.setLocation(newLocation);
-            HMCCPacketManager.sendTeleportPacket(userBalloonManager.getPufferfishBalloonId(), newLocation, false, viewers);
+            HMCCPacketManager.sendTeleportPacket(userBalloonManager.getPufferfishBalloonId(), userBalloonManager.getLocation(), false, viewers);
             return;
         }
 
@@ -110,9 +110,9 @@ public class CosmeticBalloonType extends Cosmetic implements CosmeticUpdateBehav
 
         MessagesUtil.sendDebugMessages("Balloon Cosmetic Update for " + user.getEntity().getName());
         MessagesUtil.sendDebugMessages("Ballon previous location is " + currentLocation);
-        MessagesUtil.sendDebugMessages("Balloon location set to " + newLocation);
+        MessagesUtil.sendDebugMessages("Balloon location set to " + userBalloonManager.getLocation());
 
-        HMCCPacketManager.sendTeleportPacket(userBalloonManager.getPufferfishBalloonId(), newLocation, false, viewers);
+        HMCCPacketManager.sendTeleportPacket(userBalloonManager.getPufferfishBalloonId(), userBalloonManager.getLocation(), false, viewers);
         HMCCPacketManager.sendLeashPacket(userBalloonManager.getPufferfishBalloonId(), entity.getEntityId(), viewers);
     }
 

@@ -56,6 +56,49 @@ public class HMCCServerUtils {
     }
 
     /**
+     * Runs a task on the region thread that owns {@code entity} after a delay.
+     *
+     * <p>On region-threaded servers an entity scheduler silently drops tasks while the entity is
+     * retired, which happens during cross-world teleports. This retries on the global scheduler
+     * until the entity is available again, so cosmetic refreshes are not lost when a player
+     * changes worlds.</p>
+     */
+    public static void runOnEntityLater(final Entity entity, final Runnable task, final long delayTicks) {
+        if (entity == null || task == null) return;
+        if (HMCCosmeticsPlugin.getScheduler() == null) return;
+        if (!UniversalScheduler.isFolia && !UniversalScheduler.isCanvas) {
+            HMCCosmeticsPlugin.getScheduler().runTaskLater(HMCCosmeticsPlugin.getInstance(), task, delayTicks);
+            return;
+        }
+        scheduleOnEntity(entity, task, delayTicks, 0);
+    }
+
+    private static void scheduleOnEntity(final Entity entity, final Runnable task, final long delayTicks, final int attempt) {
+        if (attempt > 100 || HMCCosmeticsPlugin.getScheduler() == null) return;
+
+        boolean scheduled = false;
+        try {
+            scheduled = entity.getScheduler().runDelayed(
+                    HMCCosmeticsPlugin.getInstance(),
+                    scheduledTask -> task.run(),
+                    null,
+                    delayTicks
+            ) != null;
+        } catch (IllegalStateException exception) {
+            // The entity was retired between the check and the scheduling attempt.
+        }
+
+        if (scheduled) return;
+
+        // The entity is mid-handoff; try again on the next global tick.
+        HMCCosmeticsPlugin.getScheduler().runTaskLater(
+                HMCCosmeticsPlugin.getInstance(),
+                () -> scheduleOnEntity(entity, task, delayTicks, attempt + 1),
+                1L
+        );
+    }
+
+    /**
      * This takes in a string like #FFFFFF to convert it into a Bukkit color
      * @param colorStr
      * @return
