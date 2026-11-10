@@ -1,5 +1,6 @@
 package com.hibiscusmc.hmccosmetics.user.manager;
 
+import com.github.Anon8281.universalScheduler.UniversalScheduler;
 import com.github.Anon8281.universalScheduler.scheduling.schedulers.TaskScheduler;
 import com.hibiscusmc.hmccosmetics.HMCCosmeticsPlugin;
 import com.hibiscusmc.hmccosmetics.util.HMCCServerUtils;
@@ -34,6 +35,8 @@ import java.util.logging.Level;
 
 public class UserBalloonManager {
 
+    private static final int MAX_TELEPORT_RETRIES = 100;
+
     private final CosmeticUser user;
     @Getter
     private BalloonType balloonType;
@@ -45,7 +48,18 @@ public class UserBalloonManager {
      * Last known balloon location. Reading {@link #modelEntity}'s location is only legal on the
      * region thread that owns it, so callers read this cache instead.
      */
-    private Location location;
+    private volatile Location location;
+    /**
+     * Teleport bookkeeping. Region-threaded servers only allow one region handoff per entity at a
+     * time and reject teleports made from inside a move event, so requests are coalesced and
+     * executed on the balloon's own region thread on the next tick.
+     */
+    private final Object teleportLock = new Object();
+    private boolean teleportScheduled;
+    private boolean teleportInFlight;
+    private boolean teleportRetryScheduled;
+    private boolean removed;
+    private int teleportRetries;
 
     public UserBalloonManager(CosmeticUser user, @NotNull Location location) {
         this.user = user;
@@ -110,6 +124,9 @@ public class UserBalloonManager {
     }
 
     public void remove() {
+        synchronized (this.teleportLock) {
+            this.removed = true;
+        }
         // This code is like a brick road, always bumpy.
         // Basically, the balloon viewers ignore people in wardrobe, which well, if your the user in the wardrobe, ain't including you.
         // This manually passes in the viewers for it to destroy, which includes the person in the wardrobe
@@ -229,7 +246,129 @@ public class UserBalloonManager {
 
     public void setLocation(Location location) {
         this.location = location.clone();
-        HMCCServerUtils.teleport(this.getModelEntity(), location);
+
+        if (!UniversalScheduler.isFolia && !UniversalScheduler.isCanvas) {
+            HMCCServerUtils.teleport(this.modelEntity, location);
+            return;
+        }
+
+        requestTeleport();
+    }
+
+    /**
+     * Queues the model entity to be teleported to the latest cached location.
+     *
+     * <p>This must never teleport directly: it is called from {@code PlayerMoveEvent}, and Canvas
+     * does not support teleporting there. On top of that, a second cross-region handoff cannot be
+     * started while the previous one is still in progress, which is what caused
+     * {@code IllegalStateException: Cannot teleport async when another region handoff is present!}.
+     * The actual teleport is therefore run on the balloon's region thread on the next tick and
+     * repeated requests are coalesced into a single teleport to the newest location.</p>
+     */
+    private void requestTeleport() {
+        synchronized (this.teleportLock) {
+            if (this.removed || this.teleportScheduled || this.teleportInFlight || this.teleportRetryScheduled) {
+                return;
+            }
+            this.teleportScheduled = true;
+        }
+
+        scheduleTeleport();
+    }
+
+    private void scheduleTeleport() {
+        boolean scheduled;
+        try {
+            scheduled = this.modelEntity.getScheduler().run(
+                    HMCCosmeticsPlugin.getInstance(),
+                    task -> {
+                        synchronized (this.teleportLock) {
+                            this.teleportScheduled = false;
+                            if (this.removed) return;
+                            this.teleportInFlight = true;
+                        }
+                        performTeleport();
+                    },
+                    () -> {
+                        // The balloon was retired (usually because a region handoff started)
+                        // before the queued task could run. Try again once it is back.
+                        synchronized (this.teleportLock) {
+                            this.teleportScheduled = false;
+                        }
+                        retryTeleportLater();
+                    }
+            ) != null;
+        } catch (IllegalStateException exception) {
+            // The entity was retired between the check and the scheduling attempt.
+            scheduled = false;
+        }
+
+        if (scheduled) return;
+
+        synchronized (this.teleportLock) {
+            this.teleportScheduled = false;
+        }
+        retryTeleportLater();
+    }
+
+    /**
+     * Runs on the region thread that owns the balloon.
+     */
+    private void performTeleport() {
+        final Location requestedLocation;
+        final Location destination;
+        synchronized (this.teleportLock) {
+            if (this.removed) {
+                this.teleportInFlight = false;
+                return;
+            }
+            requestedLocation = this.location;
+            destination = requestedLocation.clone();
+        }
+
+        try {
+            this.modelEntity.teleportAsync(destination).whenComplete((success, throwable) -> {
+                if (throwable != null) {
+                    MessagesUtil.sendDebugMessages("Balloon teleport failed: " + throwable.getMessage(), Level.WARNING);
+                }
+
+                final boolean movedAgain;
+                synchronized (this.teleportLock) {
+                    this.teleportInFlight = false;
+                    if (Boolean.TRUE.equals(success)) this.teleportRetries = 0;
+                    // A newer setLocation() replaced the cached location while we were teleporting.
+                    movedAgain = !this.removed && this.location != requestedLocation;
+                }
+
+                if (movedAgain) requestTeleport();
+            });
+        } catch (IllegalStateException exception) {
+            // Another handoff (usually our own previous cross-world balloon teleport) is still
+            // pending. Wait for it to finish instead of spamming the server with failed calls.
+            MessagesUtil.sendDebugMessages("Balloon teleport postponed: " + exception.getMessage());
+            synchronized (this.teleportLock) {
+                this.teleportInFlight = false;
+            }
+            retryTeleportLater();
+        }
+    }
+
+    private void retryTeleportLater() {
+        synchronized (this.teleportLock) {
+            if (this.removed || this.teleportRetryScheduled) return;
+            if (++this.teleportRetries > MAX_TELEPORT_RETRIES) {
+                this.teleportRetries = 0;
+                return;
+            }
+            this.teleportRetryScheduled = true;
+        }
+
+        HMCCosmeticsPlugin.getScheduler().runTaskLater(HMCCosmeticsPlugin.getInstance(), () -> {
+            synchronized (this.teleportLock) {
+                this.teleportRetryScheduled = false;
+            }
+            requestTeleport();
+        }, 1L);
     }
 
     public Vector getVelocity() {
