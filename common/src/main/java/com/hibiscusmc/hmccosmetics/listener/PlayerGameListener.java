@@ -117,6 +117,11 @@ public class PlayerGameListener implements Listener {
         // Changing worlds makes the client discard every packet-only entity. The backpack is
         // packet-only, so it has to be spawned again for the new world.
         HMCCServerUtils.runOnEntityLater(event.getPlayer(), () -> refreshCosmeticsAfterTeleport(user), 4L);
+        // Send the backpack packets once more after the client has finished loading the world.
+        HMCCServerUtils.runOnEntityLater(event.getPlayer(), () -> {
+            if (user.getEntity() == null || user.isInWardrobe()) return;
+            user.refreshBackpackPackets();
+        }, 20L);
     }
 
     private void refreshCosmeticsAfterTeleport(final CosmeticUser user) {
@@ -124,6 +129,10 @@ public class PlayerGameListener implements Listener {
 
         final Player player = user.getPlayer();
         if (player == null) return;
+
+        MessagesUtil.sendDebugMessages("refreshCosmeticsAfterTeleport[user=" + user.getUniqueId()
+                + ",world=" + player.getWorld().getName()
+                + ",backpackSpawned=" + user.isBackpackSpawned() + "]");
 
         if (Settings.getDisabledWorlds().contains(player.getWorld().getName())) {
             user.hideCosmetics(CosmeticUser.HiddenReason.WORLD);

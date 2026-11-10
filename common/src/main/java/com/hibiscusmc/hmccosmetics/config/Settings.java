@@ -50,7 +50,6 @@ public class Settings {
     private static final String COSMETIC_BACKPACK_INTERCEPT_PASSENGER_PACKET_PATH = "backpack-intercept-passenger-packets";
     private static final String COSMETIC_DESTROY_LOOSE_COSMETIC_PATH = "destroy-loose-cosmetics";
     private static final String COSMETIC_BALLOON_HEAD_FORWARD_PATH = "balloon-head-forward";
-    private static final String COSMETIC_BALLOON_HEAD_FORWARD_LEGACY_PATH = "balloon-head-unmoving";
     private static final String COSMETIC_BALLOON_DEFAULT_SHOW_LEAD_PATH = "balloon-lead-default";
     private static final String BALLOON_ANIMATION_PATH = "balloon-animation";
     private static final String BALLOON_ANIMATION_BOB_HEIGHT_PATH = "bob-height";
@@ -261,8 +260,7 @@ public class Settings {
         tickPeriod = cosmeticSettings.node(TICK_PERIOD_PATH).getInt(-1);
         engine = PlayerSearchManager.SearchEngine.valueOf(cosmeticSettings.node(PLAYER_SEARCH_IMPLEMENTATION).getString("BUKKIT").toUpperCase());
         viewDistance = cosmeticSettings.node(VIEW_DISTANCE_PATH).getInt(-3);
-        balloonHeadForward = cosmeticSettings.node(COSMETIC_BALLOON_HEAD_FORWARD_PATH)
-                .getBoolean(cosmeticSettings.node(COSMETIC_BALLOON_HEAD_FORWARD_LEGACY_PATH).getBoolean(false));
+        balloonHeadForward = cosmeticSettings.node(COSMETIC_BALLOON_HEAD_FORWARD_PATH).getBoolean(true);
         balloonDefaultShowLead = cosmeticSettings.node(COSMETIC_BALLOON_DEFAULT_SHOW_LEAD_PATH).getBoolean(true);
         backpackPreventDarkness = cosmeticSettings.node(BACKPACK_PREVENT_DARKNESS_PATH).getBoolean(true);
 
@@ -272,8 +270,8 @@ public class Settings {
         balloonAnimationBobSpeed = Math.max(0.0, balloonAnimation.node(BALLOON_ANIMATION_BOB_SPEED_PATH).getDouble(0.15));
         balloonAnimationSwayAngle = Math.max(0.0, balloonAnimation.node(BALLOON_ANIMATION_SWAY_ANGLE_PATH).getDouble(10.0));
         balloonAnimationSwaySpeed = Math.max(0.0, balloonAnimation.node(BALLOON_ANIMATION_SWAY_SPEED_PATH).getDouble(0.08));
-        balloonAnimationInterval = Math.max(1, balloonAnimation.node(BALLOON_ANIMATION_INTERVAL_PATH).getInt(2));
-        balloonAnimationFacePlayer = balloonAnimation.node(BALLOON_ANIMATION_FACE_PLAYER_PATH).getBoolean(true);
+        balloonAnimationInterval = Math.max(1, balloonAnimation.node(BALLOON_ANIMATION_INTERVAL_PATH).getInt(1));
+        balloonAnimationFacePlayer = balloonAnimation.node(BALLOON_ANIMATION_FACE_PLAYER_PATH).getBoolean(false);
 
         ConfigurationNode menuSettings = source.node(MENU_SETTINGS_PATH);
 

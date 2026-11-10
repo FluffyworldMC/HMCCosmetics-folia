@@ -60,7 +60,13 @@ public class UserBackpackManager {
         Location location = user.getEntity().getLocation();
         getEntityManager().setIds(List.of(invisibleArmorStand));
         getEntityManager().teleport(location);
-        final List<Player> outsideViewers = getEntityManager().getViewers();
+        final List<Player> outsideViewers = new ArrayList<>(getEntityManager().getViewers());
+        // The owner must always receive the spawn bundle too. On a world change the viewer list can
+        // briefly be empty before the player is added to the new world, which would leave the
+        // packet-only backpack invisible even though it is still equipped.
+        if (user.getPlayer() != null && !outsideViewers.contains(user.getPlayer())) {
+            outsideViewers.add(user.getPlayer());
+        }
 
         NMSPacketBuilder packetBuilder = NMSHandlers.getHandler().getPacketBuilder();
 

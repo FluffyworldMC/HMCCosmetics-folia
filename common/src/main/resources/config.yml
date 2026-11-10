@@ -97,7 +97,7 @@ cosmetic-settings:
   view-distance: 32
   # If the plugin should set the pitch of balloons to always be 0, to prevent players looking up affecting the balloon.
   # This only applies to models that have a "head" section to them. THIS DOES NOT IMPACT THE REST OF THE ENTITY.
-  balloon-head-forward: false
+  balloon-head-forward: true
   # Should, by default, the lead be spawned for the balloon
   balloon-lead-default: true
   # how the balloon should be positioned relative to the player
@@ -115,9 +115,9 @@ cosmetic-settings:
     # How fast the balloon sways. 0.08 is roughly a 3-4 second cycle.
     sway-speed: 0.08
     # How often the animation updates, in ticks. 1 = every tick (smoothest, most packets), 2-4 = lighter.
-    update-interval: 2
-    # If true, the balloon faces the player instead of copying the player's head rotation.
-    face-player: true
+    update-interval: 1
+    # If true, the balloon always faces the player. If false, it turns with the player's facing direction.
+    face-player: false
 
 menu-settings:
   click-cooldown:

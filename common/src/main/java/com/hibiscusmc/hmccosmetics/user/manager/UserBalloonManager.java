@@ -2,7 +2,6 @@ package com.hibiscusmc.hmccosmetics.user.manager;
 
 import com.github.Anon8281.universalScheduler.UniversalScheduler;
 import com.github.Anon8281.universalScheduler.scheduling.schedulers.TaskScheduler;
-import com.github.Anon8281.universalScheduler.scheduling.tasks.MyScheduledTask;
 import com.hibiscusmc.hmccosmetics.HMCCosmeticsPlugin;
 import com.hibiscusmc.hmccosmetics.util.HMCCServerUtils;
 import com.hibiscusmc.hmccosmetics.config.Settings;
@@ -18,6 +17,8 @@ import com.ticxo.modelengine.api.model.ModeledEntity;
 import lombok.Getter;
 import me.lojosho.hibiscuscommons.hooks.Hooks;
 import me.lojosho.hibiscuscommons.nms.NMSHandlers;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
+import org.bukkit.Bukkit;
 import org.bukkit.Color;
 import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
@@ -32,16 +33,13 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
 public class UserBalloonManager {
 
     private static final int MAX_TELEPORT_RETRIES = 100;
-    private static final Set<UserBalloonManager> ANIMATED_BALLOONS = ConcurrentHashMap.newKeySet();
-    private static MyScheduledTask animationTask;
+    private static final int MAX_ANIMATION_RESTART_ATTEMPTS = 600;
 
     private final CosmeticUser user;
     @Getter
@@ -61,13 +59,19 @@ public class UserBalloonManager {
      */
     private volatile Location baseLocation;
     /**
-     * Floating animation state. The animation runs on one shared task and only updates these
-     * fields, the actual entity movement still goes through the region-aware teleport queue.
+     * Location the real entity is moved to server-side. Kept separate from {@link #location} so
+     * movement updates and the floating animation can share the same teleport bookkeeping.
+     */
+    private volatile Location serverTarget;
+    /**
+     * Floating animation state. The animation runs on the balloon's own region thread so the bob
+     * and head pose updates happen every tick without cross-thread scheduling jitter.
      */
     private volatile double bobPhase;
     private volatile double swayPhase;
     private volatile float animationSway;
     private int animationTicks;
+    private volatile Runnable cancelAnimationTask;
     /**
      * Teleport bookkeeping. Region-threaded servers only allow one region handoff per entity at a
      * time and reject teleports made from inside a move event, so requests are coalesced and
@@ -84,6 +88,7 @@ public class UserBalloonManager {
         this.user = user;
         this.location = location.clone();
         this.baseLocation = location.clone();
+        this.serverTarget = location.clone();
         this.pufferfish = new UserBalloonPufferfish(user.getUniqueId(), NMSHandlers.getHandler().getUtilHandler().getNextEntityId(location.getWorld()), UUID.randomUUID());
         this.modelEntity = location.getWorld().spawn(location, ArmorStand.class, (e) -> {
             e.setInvisible(true);
@@ -97,34 +102,70 @@ public class UserBalloonManager {
             e.getPersistentDataContainer().set(HMCCServerUtils.getCosmemeticMobKey(), PersistentDataType.BOOLEAN, true);
         });
 
-        ANIMATED_BALLOONS.add(this);
-        ensureAnimationTask();
+        startAnimationTask();
     }
 
     /**
-     * Starts the single shared animation task used by every balloon. Keeping one task instead of
-     * one task per balloon is much lighter, and running it on the global scheduler means it keeps
-     * working while a balloon is retired during a cross-region handoff.
+     * Starts a per-balloon animation task on the balloon's own region. This keeps the animation
+     * updates at a stable cadence (instead of bouncing through the global scheduler and the
+     * teleport queue), which removes the visible stutter from the bob/sway.
      */
-    private static void ensureAnimationTask() {
-        synchronized (UserBalloonManager.class) {
-            if (animationTask != null && !animationTask.isCancelled()) return;
+    private void startAnimationTask() {
+        if (this.removed) return;
 
-            animationTask = HMCCosmeticsPlugin.getScheduler().runTaskTimer(
+        if (!UniversalScheduler.isFolia && !UniversalScheduler.isCanvas) {
+            this.cancelAnimationTask = Bukkit.getScheduler()
+                    .runTaskTimer(HMCCosmeticsPlugin.getInstance(), this::tickAnimation, 1L, 1L)::cancel;
+            return;
+        }
+
+        startEntityAnimationTask(0);
+    }
+
+    private void startEntityAnimationTask(final int attempt) {
+        if (this.removed || attempt > MAX_ANIMATION_RESTART_ATTEMPTS) return;
+
+        ScheduledTask task = null;
+        try {
+            task = this.modelEntity.getScheduler().runAtFixedRate(
                     HMCCosmeticsPlugin.getInstance(),
+                    scheduledTask -> tickAnimation(),
                     () -> {
-                        for (final UserBalloonManager balloon : ANIMATED_BALLOONS) {
-                            try {
-                                balloon.tickAnimation();
-                            } catch (Exception exception) {
-                                MessagesUtil.sendDebugMessages("Balloon animation failed: " + exception.getMessage(), Level.WARNING);
-                            }
+                        // The balloon was retired by a region handoff. Restart once it is back.
+                        synchronized (this.teleportLock) {
+                            this.teleportInFlight = false;
                         }
+                        if (HMCCosmeticsPlugin.getScheduler() == null) return;
+                        HMCCosmeticsPlugin.getScheduler().runTaskLater(
+                                HMCCosmeticsPlugin.getInstance(),
+                                () -> startEntityAnimationTask(attempt + 1),
+                                1L
+                        );
                     },
                     1L,
                     1L
             );
+        } catch (IllegalStateException exception) {
+            // The entity is retired right now; retry below.
         }
+
+        if (task != null) {
+            synchronized (this.teleportLock) {
+                if (this.removed) {
+                    task.cancel();
+                    return;
+                }
+                this.cancelAnimationTask = task::cancel;
+            }
+            return;
+        }
+
+        if (HMCCosmeticsPlugin.getScheduler() == null) return;
+        HMCCosmeticsPlugin.getScheduler().runTaskLater(
+                HMCCosmeticsPlugin.getInstance(),
+                () -> startEntityAnimationTask(attempt + 1),
+                1L
+        );
     }
 
     public void spawnModel(@NotNull CosmeticBalloonType cosmeticBalloonType, Color color) {
@@ -173,9 +214,11 @@ public class UserBalloonManager {
     }
 
     public void remove() {
-        ANIMATED_BALLOONS.remove(this);
         synchronized (this.teleportLock) {
             this.removed = true;
+            final Runnable cancelAnimation = this.cancelAnimationTask;
+            this.cancelAnimationTask = null;
+            if (cancelAnimation != null) cancelAnimation.run();
         }
         // This code is like a brick road, always bumpy.
         // Basically, the balloon viewers ignore people in wardrobe, which well, if your the user in the wardrobe, ain't including you.
@@ -316,29 +359,44 @@ public class UserBalloonManager {
 
         this.baseLocation = base;
         this.location = currentAnimatedLocation(base);
+        this.serverTarget = this.location.clone();
 
         if (!UniversalScheduler.isFolia && !UniversalScheduler.isCanvas) {
-            applyAnimationPose();
-            HMCCServerUtils.teleport(this.modelEntity, this.location);
+            if (!isAnimationActive()) {
+                applyAnimationPose();
+                HMCCServerUtils.teleport(this.modelEntity, this.serverTarget);
+            }
             return;
         }
 
-        requestTeleport();
+        // When the animation is running, the per-balloon animation task moves the entity on the
+        // next tick. This keeps movement updates and the bob on the same stable cadence.
+        if (!isAnimationActive()) {
+            requestTeleport();
+        }
+    }
+
+    private boolean isAnimationActive() {
+        return Settings.isBalloonAnimationEnabled()
+                && (Settings.getBalloonAnimationBobHeight() > 0.0
+                || Settings.getBalloonAnimationSwayAngle() > 0.0);
     }
 
     /**
-     * Advances the floating animation. Called from the shared animation task, which runs on the
-     * global region thread, so this method only updates cached state and then asks the balloon's
-     * own region to move the entity.
+     * Advances the floating animation. On region-threaded servers this runs on the balloon's own
+     * region thread every tick, so the animation has a stable cadence and the head pose can be
+     * updated directly.
      */
     private void tickAnimation() {
-        if (this.removed) {
-            ANIMATED_BALLOONS.remove(this);
+        if (this.removed) return;
+        if (!isAnimationActive()) {
+            if (this.animationSway != 0.0F) {
+                this.animationSway = 0.0F;
+                applyAnimationPose();
+            }
             return;
         }
-        if (!Settings.isBalloonAnimationEnabled()) return;
         if (this.balloonType == null || this.balloonType == BalloonType.NONE) return;
-        if (Settings.getBalloonAnimationBobHeight() <= 0.0 && Settings.getBalloonAnimationSwayAngle() <= 0.0) return;
 
         final int interval = Math.max(1, Settings.getBalloonAnimationInterval());
         if (++this.animationTicks < interval) return;
@@ -353,14 +411,42 @@ public class UserBalloonManager {
 
         final Location target = currentAnimatedLocation(base);
         this.location = target;
+        this.serverTarget = target;
+        applyAnimationPose();
 
-        if (UniversalScheduler.isFolia || UniversalScheduler.isCanvas) {
-            requestTeleport();
+        if (!UniversalScheduler.isFolia && !UniversalScheduler.isCanvas) {
+            HMCCServerUtils.teleport(this.modelEntity, target);
             return;
         }
 
-        applyAnimationPose();
-        HMCCServerUtils.teleport(this.modelEntity, target);
+        teleportAnimated(target);
+    }
+
+    /**
+     * Teleports the balloon for the animation from the balloon's own region thread. If the previous
+     * teleport is still completing, this tick is skipped; the next tick will catch up.
+     */
+    private void teleportAnimated(final Location target) {
+        synchronized (this.teleportLock) {
+            if (this.removed || this.teleportInFlight) return;
+            this.teleportInFlight = true;
+        }
+
+        try {
+            this.modelEntity.teleportAsync(target).whenComplete((success, throwable) -> {
+                if (throwable != null) {
+                    MessagesUtil.sendDebugMessages("Balloon animation teleport failed: " + throwable.getMessage(), Level.WARNING);
+                }
+                synchronized (this.teleportLock) {
+                    this.teleportInFlight = false;
+                }
+            });
+        } catch (IllegalStateException exception) {
+            // A handoff is in progress. The retired callback restarts the animation task.
+            synchronized (this.teleportLock) {
+                this.teleportInFlight = false;
+            }
+        }
     }
 
     private Location currentAnimatedLocation(final Location base) {
@@ -407,7 +493,7 @@ public class UserBalloonManager {
                     task -> {
                         synchronized (this.teleportLock) {
                             this.teleportScheduled = false;
-                            if (this.removed) return;
+                            if (this.removed || this.teleportInFlight) return;
                             this.teleportInFlight = true;
                         }
                         performTeleport();
@@ -445,7 +531,7 @@ public class UserBalloonManager {
                 this.teleportInFlight = false;
                 return;
             }
-            requestedLocation = this.location;
+            requestedLocation = this.serverTarget != null ? this.serverTarget : this.location;
             destination = requestedLocation.clone();
         }
 
@@ -461,11 +547,11 @@ public class UserBalloonManager {
                 synchronized (this.teleportLock) {
                     this.teleportInFlight = false;
                     if (Boolean.TRUE.equals(success)) this.teleportRetries = 0;
-                    // A newer movement or animation update replaced the cached location.
-                    movedAgain = !this.removed && this.location != requestedLocation;
+                    // A newer movement or animation update replaced the server target.
+                    movedAgain = !this.removed && this.serverTarget != requestedLocation;
                 }
 
-                if (movedAgain) requestTeleport();
+                if (movedAgain && !Settings.isBalloonAnimationEnabled()) requestTeleport();
             });
         } catch (IllegalStateException exception) {
             // Another handoff (usually our own previous cross-world balloon teleport) is still

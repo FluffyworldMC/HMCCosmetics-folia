@@ -81,7 +81,16 @@ public class HMCCServerUtils {
             scheduled = entity.getScheduler().runDelayed(
                     HMCCosmeticsPlugin.getInstance(),
                     scheduledTask -> task.run(),
-                    null,
+                    () -> {
+                        // The entity was retired before the task could run (common during a
+                        // cross-world teleport). Reschedule instead of silently losing the task.
+                        if (HMCCosmeticsPlugin.getScheduler() == null) return;
+                        HMCCosmeticsPlugin.getScheduler().runTaskLater(
+                                HMCCosmeticsPlugin.getInstance(),
+                                () -> scheduleOnEntity(entity, task, delayTicks, attempt + 1),
+                                1L
+                        );
+                    },
                     delayTicks
             ) != null;
         } catch (IllegalStateException exception) {

@@ -58,7 +58,7 @@ public class PlayerMovementListener implements Listener {
             return true;
         }
 
-        if(next.yawDistanceTo(previous) > 5) {
+        if(next.yawDistanceTo(previous) > 2) {
             this.locations.put(player.getUniqueId(), next);
             return true;
         }
