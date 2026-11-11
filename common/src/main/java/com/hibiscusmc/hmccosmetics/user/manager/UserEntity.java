@@ -50,9 +50,15 @@ public class UserEntity {
             return List.of();
         }
 
-        final List<Player> players = HMCCosmeticsPlugin.getInstance()
+        final List<Player> players = new ArrayList<>(HMCCosmeticsPlugin.getInstance()
             .getPlayerSearchManager()
-            .getPlayersInRange(location, Settings.getViewDistance());
+            .getPlayersInRange(location, Settings.getViewDistance()));
+        // Nearby-player queries can omit the owner during a region/world handoff. Removing
+        // them here sends a destroy packet for the model we just restored after teleport.
+        if (ownerPlayer instanceof Player player && player.getWorld().equals(location.getWorld())
+                && !players.contains(player)) {
+            players.add(player);
+        }
 
         final ArrayList<UUID> newPlayerIds = new ArrayList<>();
         final ArrayList<UUID> removePlayerIds = new ArrayList<>();

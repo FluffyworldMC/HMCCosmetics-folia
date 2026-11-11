@@ -18,7 +18,6 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -59,6 +58,7 @@ public class UserBackpackManager {
     private void spawn(CosmeticBackpackType cosmeticBackpackType) {
         Location location = user.getEntity().getLocation();
         getEntityManager().setIds(List.of(invisibleArmorStand));
+        getEntityManager().refreshViewers(location);
         getEntityManager().teleport(location);
         final List<Player> outsideViewers = new ArrayList<>(getEntityManager().getViewers());
         // The owner must always receive the spawn bundle too. On a world change the viewer list can
@@ -95,11 +95,19 @@ public class UserBackpackManager {
         passengerIDs[passengerIDs.length - 1] = this.getFirstArmorStandId();
 
         if (cosmeticBackpackType.isFirstPersonCompadible()) {
+            // The owner needs the armor stand before any equipment or mount packets, and must
+            // not receive the third-person mount afterwards (it replaces the cloud chain).
+            outsideViewers.remove(user.getPlayer());
+            ownerBundle.addAll(outsideBundle);
             for (int i = particleCloud.size(); i < cosmeticBackpackType.getHeight(); i++) {
                 int entityId = ServerUtils.getNextEntityId(location.getWorld());
-                ownerBundle.addAll(HMCCPacketManager.getCloudHandleEffect(entityId, location, UUID.randomUUID()));
                 //if (scaleValue != 1) ownerBundle.add(packetBuilder.buildEntityAttributePacket(entityId, Attribute.SCALE, scaleValue)); // Todo: figure out how to impl scaling, area clouds can not scale and will kick the player if sent
                 this.particleCloud.add(entityId);
+            }
+            // A world switch clears these entities on the client, even when their IDs are
+            // still cached here. Re-send every cloud on refresh, not just newly allocated IDs.
+            for (int entityId : particleCloud) {
+                ownerBundle.addAll(HMCCPacketManager.getCloudHandleEffect(entityId, location, UUID.randomUUID()));
             }
             // Copied code from updating the backpack
             for (int i = 0; i < particleCloud.size(); i++) {

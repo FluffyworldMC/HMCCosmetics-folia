@@ -53,6 +53,7 @@ public class CosmeticUser implements CosmeticHolder {
     @Getter
     private final UUID uniqueId;
     private MyScheduledTask tickTask;
+    private UUID cosmeticWorld;
     private final HashMap<CosmeticSlot, Cosmetic> playerCosmetics = new HashMap<>();
     private UserWardrobeManager userWardrobeManager;
     private UserBalloonManager userBalloonManager;
@@ -178,13 +179,14 @@ public class CosmeticUser implements CosmeticHolder {
      * there will be no task created
      */
     public final void startTicking() {
+        Entity entity = getEntity();
+        if (entity != null) cosmeticWorld = entity.getWorld().getUID();
         int tickPeriod = Settings.getTickPeriod();
         if (tickPeriod <= 0) {
             MessagesUtil.sendDebugMessages("CosmeticUser tick is disabled.");
             return;
         }
 
-        Entity entity = getEntity();
         if (entity != null) {
             this.tickTask = HMCCosmeticsPlugin.getScheduler().runTaskTimer(entity, this::tick, 0, tickPeriod);
         } else {
@@ -200,6 +202,8 @@ public class CosmeticUser implements CosmeticHolder {
     protected void tick() {
         MessagesUtil.sendDebugMessages("Tick[uuid=" + uniqueId + "]", Level.INFO);
 
+        refreshWorldState();
+
         if (Hooks.isInvisible(uniqueId)) {
             this.hideCosmetics(HiddenReason.VANISH);
         } else {
@@ -211,6 +215,29 @@ public class CosmeticUser implements CosmeticHolder {
         if(isHidden() && !playerCosmetics.isEmpty()) {
             MessagesUtil.sendActionBar(getPlayer(), "hidden-cosmetics");
         }
+    }
+
+    /**
+     * Detect world transfers on the owning entity thread, including Folia teleports that do
+     * not fire PlayerChangedWorldEvent. The menu's equipped state survives a transfer, but
+     * the client's packet-only entities do not.
+     */
+    public void refreshWorldState() {
+        Entity entity = getEntity();
+        if (entity == null) return;
+        UUID currentWorld = entity.getWorld().getUID();
+        if (currentWorld.equals(cosmeticWorld)) return;
+        UUID previousWorld = cosmeticWorld;
+        cosmeticWorld = currentWorld;
+        if (previousWorld == null || isInWardrobe()) return;
+
+        if (Settings.getDisabledWorlds().contains(entity.getWorld().getName())) {
+            hideCosmetics(HiddenReason.WORLD);
+        } else {
+            showCosmetics(HiddenReason.WORLD);
+        }
+        respawnBackpack();
+        respawnBalloon();
     }
 
     public void destroy() {
@@ -588,7 +615,7 @@ public class CosmeticUser implements CosmeticHolder {
     }
 
     public void spawnBackpack(CosmeticBackpackType cosmeticBackpackType) {
-        if (this.userBackpackManager != null) return;
+        if (this.userBackpackManager != null || getEntity() == null) return;
         this.userBackpackManager = new UserBackpackManager(this);
         userBackpackManager.spawnBackpack(cosmeticBackpackType);
     }
@@ -629,7 +656,7 @@ public class CosmeticUser implements CosmeticHolder {
     }
 
     public void respawnBackpack() {
-        if (!hasCosmeticInSlot(CosmeticSlot.BACKPACK)) return;
+        if (!hasCosmeticInSlot(CosmeticSlot.BACKPACK) || getEntity() == null) return;
         final Cosmetic cosmetic = getCosmetic(CosmeticSlot.BACKPACK);
         despawnBackpack();
         if (!hiddenReason.isEmpty()) return;
@@ -642,6 +669,7 @@ public class CosmeticUser implements CosmeticHolder {
      * packet-only entity, so its packets can be lost while the client is switching worlds.
      */
     public void refreshBackpackPackets() {
+        if (getEntity() == null || isHidden() || isInWardrobe() || isHidingBackpackPose()) return;
         if (!hasCosmeticInSlot(CosmeticSlot.BACKPACK)) return;
         if (userBackpackManager == null) {
             respawnBackpack();
@@ -651,7 +679,7 @@ public class CosmeticUser implements CosmeticHolder {
     }
 
     public void respawnBalloon() {
-        if (!hasCosmeticInSlot(CosmeticSlot.BALLOON)) return;
+        if (!hasCosmeticInSlot(CosmeticSlot.BALLOON) || getEntity() == null) return;
         final Cosmetic cosmetic = getCosmetic(CosmeticSlot.BALLOON);
         despawnBalloon();
         if (!hiddenReason.isEmpty()) return;

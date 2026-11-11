@@ -64,7 +64,10 @@ public class CosmeticBackpackType extends Cosmetic implements CosmeticUpdateBeha
 
         int firstArmorStandId = backpackManager.getFirstArmorStandId();
 
-        List<Player> newViewers = entityManager.refreshViewers(loc);
+        List<Player> newViewers = new ArrayList<>(entityManager.refreshViewers(loc));
+        // The owner already has a separate first-person model and cloud mount chain.
+        // A third-person spawn would replace its equipment and mount on the client.
+        if (isFirstPersonCompadible()) newViewers.remove(user.getPlayer());
         NMSPacketBuilder packetBuilder = NMSHandlers.getHandler().getPacketBuilder();
 
         final ArrayList<PacketWrapper> newViewerBundle = new ArrayList<>();

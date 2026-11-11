@@ -14,6 +14,7 @@ import com.hibiscusmc.hmccosmetics.util.HMCCInventoryUtils;
 import com.hibiscusmc.hmccosmetics.util.HMCCServerUtils;
 import com.hibiscusmc.hmccosmetics.util.MessagesUtil;
 import com.hibiscusmc.hmccosmetics.util.packets.HMCCPacketManager;
+import io.papermc.paper.event.player.PlayerClientLoadedWorldEvent;
 import me.lojosho.hibiscuscommons.api.events.*;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -95,15 +96,9 @@ public class PlayerGameListener implements Listener {
         }
 
         final Player player = event.getPlayer();
-        final boolean worldChange = event.getFrom().getWorld() != null
-                && event.getTo() != null
-                && event.getTo().getWorld() != null
-                && !event.getFrom().getWorld().equals(event.getTo().getWorld());
-
         HMCCServerUtils.runOnEntityLater(player, () -> {
-            // Cross-world teleports are handled by onPlayerChangedWorld once the player has
-            // actually arrived in the new world.
-            if (worldChange) return;
+            // Folia's teleportAsync does not always fire PlayerChangedWorldEvent.
+            // Keep this refresh for cross-world teleports as well.
             refreshCosmeticsAfterTeleport(user);
         }, 4L);
     }
@@ -143,6 +138,21 @@ public class PlayerGameListener implements Listener {
         user.respawnBackpack();
         user.respawnBalloon();
         user.updateCosmetic();
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onClientLoadedWorld(PlayerClientLoadedWorldEvent event) {
+        final Player player = event.getPlayer();
+        // Fixed delays can expire while the terrain screen is still open. Restore the
+        // packet-only model when the client reports ready, on the player's region thread.
+        HMCCServerUtils.runOnEntityLater(player, () -> {
+            if (!player.isOnline()) return;
+            final CosmeticUser user = CosmeticUsers.getUser(player.getUniqueId());
+            if (user != null) {
+                user.refreshWorldState();
+                user.refreshBackpackPackets();
+            }
+        }, 1L);
     }
 
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)

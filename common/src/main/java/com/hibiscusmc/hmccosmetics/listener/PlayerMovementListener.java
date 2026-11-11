@@ -37,6 +37,10 @@ public class PlayerMovementListener implements Listener {
             return;
         }
 
+        // Also recovers transfers when cosmetic ticking is disabled or the world-change
+        // event is missing on Folia. Check before filtering out small movements.
+        user.refreshWorldState();
+
         if(!updateDirtyLocation(ev.getPlayer(), ev.getTo())) {
             return;
         }

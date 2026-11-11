@@ -147,8 +147,9 @@ public class CosmeticPacketInterface implements PacketInterface {
         if (user.getUserBackpackManager() == null) return PacketAction.NOTHING;
 
         List<Integer> originalPassengers = wrapper.getPassengers();
-        List<Integer> passengers = new ArrayList<>(user.getUserBackpackManager().getFirstArmorStandId());
-        passengers.addAll(originalPassengers);
+        List<Integer> passengers = new ArrayList<>(originalPassengers);
+        int backpackId = user.getUserBackpackManager().getFirstArmorStandId();
+        if (!passengers.contains(backpackId)) passengers.add(backpackId);
         wrapper.setPassengers(passengers);
         return PacketAction.CHANGED;
     }
