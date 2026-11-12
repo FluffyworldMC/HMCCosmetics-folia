@@ -2,6 +2,7 @@ package com.hibiscusmc.hmccosmetics.util;
 
 import com.github.Anon8281.universalScheduler.UniversalScheduler;
 import com.hibiscusmc.hmccosmetics.HMCCosmeticsPlugin;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import me.lojosho.hibiscuscommons.nms.NMSHandlers;
 import org.bukkit.*;
 import org.bukkit.entity.Entity;
@@ -11,6 +12,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.math.BigInteger;
 import java.util.Arrays;
+import java.util.function.Consumer;
 
 public class HMCCServerUtils {
 
@@ -66,35 +68,40 @@ public class HMCCServerUtils {
     public static void runOnEntityLater(final Entity entity, final Runnable task, final long delayTicks) {
         if (entity == null || task == null) return;
         if (HMCCosmeticsPlugin.getScheduler() == null) return;
+        // Folia's EntityScheduler#runDelayed rejects delays <= 0; use the immediate variant instead.
+        final long delay = Math.max(0L, delayTicks);
         if (!UniversalScheduler.isFolia && !UniversalScheduler.isCanvas) {
-            HMCCosmeticsPlugin.getScheduler().runTaskLater(HMCCosmeticsPlugin.getInstance(), task, delayTicks);
+            HMCCosmeticsPlugin.getScheduler().runTaskLater(HMCCosmeticsPlugin.getInstance(), task, delay);
             return;
         }
-        scheduleOnEntity(entity, task, delayTicks, 0);
+        scheduleOnEntity(entity, task, delay, 0);
     }
 
-    private static void scheduleOnEntity(final Entity entity, final Runnable task, final long delayTicks, final int attempt) {
+    static void scheduleOnEntity(final Entity entity, final Runnable task, final long delayTicks, final int attempt) {
         if (attempt > 100 || HMCCosmeticsPlugin.getScheduler() == null) return;
 
         boolean scheduled = false;
         try {
-            scheduled = entity.getScheduler().runDelayed(
-                    HMCCosmeticsPlugin.getInstance(),
-                    scheduledTask -> task.run(),
-                    () -> {
-                        // The entity was retired before the task could run (common during a
-                        // cross-world teleport). Reschedule instead of silently losing the task.
-                        if (HMCCosmeticsPlugin.getScheduler() == null) return;
-                        HMCCosmeticsPlugin.getScheduler().runTaskLater(
-                                HMCCosmeticsPlugin.getInstance(),
-                                () -> scheduleOnEntity(entity, task, delayTicks, attempt + 1),
-                                1L
-                        );
-                    },
-                    delayTicks
-            ) != null;
-        } catch (IllegalStateException exception) {
-            // The entity was retired between the check and the scheduling attempt.
+            final Consumer<ScheduledTask> run = scheduledTask -> task.run();
+            final Runnable retired = () -> {
+                // The entity was retired before the task could run (common during a
+                // cross-world teleport). Reschedule instead of silently losing the task.
+                if (HMCCosmeticsPlugin.getScheduler() == null) return;
+                HMCCosmeticsPlugin.getScheduler().runTaskLater(
+                        HMCCosmeticsPlugin.getInstance(),
+                        () -> scheduleOnEntity(entity, task, delayTicks, attempt + 1),
+                        1L
+                );
+            };
+
+            if (delayTicks <= 0L) {
+                scheduled = entity.getScheduler().run(HMCCosmeticsPlugin.getInstance(), run, retired) != null;
+            } else {
+                scheduled = entity.getScheduler().runDelayed(HMCCosmeticsPlugin.getInstance(), run, retired, delayTicks) != null;
+            }
+        } catch (IllegalStateException | IllegalArgumentException exception) {
+            // The entity was retired between the check and the scheduling attempt, or the delay
+            // was rejected by the scheduler.
         }
 
         if (scheduled) return;
