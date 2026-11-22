@@ -615,7 +615,7 @@ public class CosmeticUser implements CosmeticHolder {
     }
 
     public void spawnBackpack(CosmeticBackpackType cosmeticBackpackType) {
-        if (userWardrobeManager != null && userWardrobeManager.getWardrobeStatus() != UserWardrobeManager.WardrobeStatus.STOPPING) return;
+        if (userWardrobeManager != null) return;
         if (this.userBackpackManager != null || getEntity() == null) return;
         this.userBackpackManager = new UserBackpackManager(this);
         userBackpackManager.spawnBackpack(cosmeticBackpackType);

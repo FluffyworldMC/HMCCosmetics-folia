@@ -6,6 +6,7 @@ import com.hibiscusmc.hmccosmetics.api.events.PlayerMenuOpenEvent;
 import com.hibiscusmc.hmccosmetics.config.Settings;
 import com.hibiscusmc.hmccosmetics.cosmetic.Cosmetic;
 import com.hibiscusmc.hmccosmetics.cosmetic.CosmeticHolder;
+import com.hibiscusmc.hmccosmetics.cosmetic.CosmeticSlot;
 import com.hibiscusmc.hmccosmetics.cosmetic.Cosmetics;
 import com.hibiscusmc.hmccosmetics.gui.type.ShadingType;
 import com.hibiscusmc.hmccosmetics.gui.type.Type;
@@ -14,6 +15,7 @@ import com.hibiscusmc.hmccosmetics.gui.type.types.TypeCosmetic;
 import com.hibiscusmc.hmccosmetics.user.CosmeticUser;
 import com.hibiscusmc.hmccosmetics.user.manager.UserWardrobeManager;
 import com.hibiscusmc.hmccosmetics.util.HMCCInventoryUtils;
+import com.hibiscusmc.hmccosmetics.util.HMCCServerUtils;
 import com.hibiscusmc.hmccosmetics.util.MessagesUtil;
 import dev.triumphteam.gui.builder.item.ItemBuilder;
 import dev.triumphteam.gui.guis.Gui;
@@ -38,6 +40,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Color;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.ClickType;
+import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.jetbrains.annotations.Contract;
@@ -486,7 +489,31 @@ public class Menu {
                     }
                     MessagesUtil.sendDebugMessages("Updated Menu Item in slot number " + slot);
                     final ClickType clickType = event.getClick();
+                    UserWardrobeManager wardrobe = cosmeticHolder instanceof CosmeticUser user
+                            && uuid.equals(user.getUniqueId()) ? user.getWardrobeManager() : null;
+                    CosmeticSlot selectionSlot = null;
+                    if (type instanceof TypeCosmetic && wardrobe != null
+                            && wardrobe.getWardrobeStatus() == UserWardrobeManager.WardrobeStatus.RUNNING) {
+                        Cosmetic selection = Cosmetics.getCosmetic(item.itemConfig().node("cosmetic").getString(""));
+                        if (selection != null) selectionSlot = selection.getSlot();
+                    }
+                    Cosmetic previous = selectionSlot == null ? null : cosmeticHolder.getCosmetic(selectionSlot);
                     if (type != null) type.run(viewer, cosmeticHolder, item.itemConfig(), clickType);
+
+                    if (selectionSlot != null) {
+                        Inventory clickedInventory = event.getInventory();
+                        if (previous != cosmeticHolder.getCosmetic(selectionSlot)) {
+                            // Finish the click event before closing its inventory.
+                            HMCCServerUtils.runOnEntityLater(viewer, () -> {
+                                if (viewer.isOnline() && viewer.getOpenInventory().getTopInventory().equals(clickedInventory)) {
+                                    viewer.closeInventory();
+                                }
+                            }, 1);
+                            return;
+                        }
+                        // A dye selector can replace the menu without equipping anything yet.
+                        if (!viewer.getOpenInventory().getTopInventory().equals(clickedInventory)) return;
+                    }
                     updateMenu(viewer, cosmeticHolder, gui);
                 });
             }

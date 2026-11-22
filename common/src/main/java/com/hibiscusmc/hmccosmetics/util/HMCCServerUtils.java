@@ -12,6 +12,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.math.BigInteger;
 import java.util.Arrays;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
 public class HMCCServerUtils {
@@ -49,12 +50,17 @@ public class HMCCServerUtils {
     }
 
     public static void teleport(Entity entity, Location location, PlayerTeleportEvent.TeleportCause cause) {
-        if (entity == null || location == null || location.getWorld() == null) return;
-        if (UniversalScheduler.isFolia || UniversalScheduler.isCanvas) {
-            entity.teleportAsync(location, cause);
-            return;
+        teleportWithResult(entity, location, cause);
+    }
+
+    public static CompletableFuture<Boolean> teleportWithResult(Entity entity, Location location, PlayerTeleportEvent.TeleportCause cause) {
+        if (entity == null || location == null || location.getWorld() == null) {
+            return CompletableFuture.completedFuture(false);
         }
-        entity.teleport(location, cause);
+        if (UniversalScheduler.isFolia || UniversalScheduler.isCanvas) {
+            return entity.teleportAsync(location, cause);
+        }
+        return CompletableFuture.completedFuture(entity.teleport(location, cause));
     }
 
     /**

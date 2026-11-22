@@ -35,6 +35,7 @@ import org.bukkit.inventory.ItemStack;
 import com.github.Anon8281.universalScheduler.scheduling.tasks.MyScheduledTask;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
@@ -275,17 +276,9 @@ public class UserWardrobeManager {
             }
             user.showPlayer();
 
-            if (user.hasCosmeticInSlot(CosmeticSlot.BACKPACK)) {
-                user.respawnBackpack();
-                //PacketManager.ridingMountPacket(player.getEntityId(), VIEWER.getBackpackEntity().getEntityId(), viewer);
-            }
-
-            if (user.hasCosmeticInSlot(CosmeticSlot.BALLOON)) {
-                //user.respawnBalloon();
-                //PacketManager.sendLeashPacket(VIEWER.getBalloonEntity().getPufferfishBalloonId(), player.getEntityId(), viewer);
-            }
-
-            HMCCServerUtils.teleport(player, Objects.requireNonNullElseGet(exitLocation, () -> player.getWorld().getSpawnLocation()), PlayerTeleportEvent.TeleportCause.PLUGIN);
+            Location destination = Objects.requireNonNullElseGet(exitLocation, () -> player.getWorld().getSpawnLocation());
+            CompletableFuture<Boolean> teleport = HMCCServerUtils.teleportWithResult(player, destination, PlayerTeleportEvent.TeleportCause.PLUGIN);
+            restoreBackpackAfterExit(player, teleport);
 
             HashMap<EquipmentSlot, ItemStack> items = new HashMap<>();
             for (EquipmentSlot slot : HMCCInventoryUtils.getPlayerArmorSlots()) {
@@ -307,6 +300,22 @@ public class UserWardrobeManager {
             user.updateCosmetic();
         };
         run.run();
+    }
+
+    void restoreBackpackAfterExit(Player player, CompletableFuture<Boolean> teleport) {
+        teleport.whenComplete((success, failure) -> {
+            if (failure != null) {
+                HMCCosmeticsPlugin.getInstance().getLogger().log(Level.WARNING, "Could not teleport player out of wardrobe " + wardrobe.getId(), failure);
+            }
+            // Wait for both the teleport and leaveWardrobe clearing this manager before mounting the backpack.
+            HMCCServerUtils.runOnEntityLater(player, () -> {
+                if (player.isOnline() && user.getPlayer() == player && !user.isInWardrobe()
+                        && user.hasCosmeticInSlot(CosmeticSlot.BACKPACK)) {
+                    user.refreshWorldState();
+                    user.refreshBackpackPackets();
+                }
+            }, 1);
+        });
     }
 
     public boolean requestMenuOpen(Player player) {

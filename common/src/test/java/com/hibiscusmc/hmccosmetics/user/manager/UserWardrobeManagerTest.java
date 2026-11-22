@@ -30,12 +30,57 @@ import java.util.ArrayDeque;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
+import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.AdditionalMatchers.aryEq;
 import static org.mockito.Mockito.*;
 
 class UserWardrobeManagerTest {
+    @Test
+    void restoresEquippedBackpackOnThePlayerThreadAfterTheExitTeleport() {
+        World world = mock(World.class);
+        Location location = new Location(world, 0, 64, 0);
+        Wardrobe wardrobe = new Wardrobe("test", new WardrobeLocation(location, location, location), null, 0, null, null);
+        CosmeticUser user = mock(CosmeticUser.class);
+        Player player = mock(Player.class);
+        when(user.getEntity()).thenReturn(player);
+        when(user.getPlayer()).thenReturn(player);
+        when(user.hasCosmeticInSlot(CosmeticSlot.BACKPACK)).thenReturn(true);
+        when(user.isInWardrobe()).thenReturn(true);
+        when(player.getWorld()).thenReturn(world);
+        when(player.isOnline()).thenReturn(true);
+        NMSHandler handler = mock(NMSHandler.class);
+        Queue<Runnable> scheduled = new ArrayDeque<>();
+        CompletableFuture<Boolean> teleport = new CompletableFuture<>();
+
+        try (MockedStatic<NMSHandlers> handlers = mockStatic(NMSHandlers.class);
+             MockedStatic<ServerUtils> server = mockStatic(ServerUtils.class);
+             MockedStatic<HMCCServerUtils> scheduler = mockStatic(HMCCServerUtils.class)) {
+            handlers.when(NMSHandlers::getHandler).thenReturn(handler);
+            scheduler.when(() -> HMCCServerUtils.runOnEntityLater(eq(player), any(Runnable.class), eq(1L)))
+                    .thenAnswer(call -> {
+                        scheduled.add(call.getArgument(1));
+                        return null;
+                    });
+            UserWardrobeManager manager = new UserWardrobeManager(user, wardrobe);
+
+            manager.restoreBackpackAfterExit(player, teleport);
+            assertTrue(scheduled.isEmpty());
+            verify(user, never()).refreshBackpackPackets();
+
+            teleport.complete(true);
+            assertEquals(1, scheduled.size());
+            verify(user, never()).refreshBackpackPackets();
+
+            when(user.isInWardrobe()).thenReturn(false);
+            scheduled.remove().run();
+            var order = inOrder(user);
+            order.verify(user).refreshWorldState();
+            order.verify(user).refreshBackpackPackets();
+        }
+    }
+
     @Test
     void reopensWardrobeMenuAfterCloseOnThePlayerThread() {
         World world = mock(World.class);
