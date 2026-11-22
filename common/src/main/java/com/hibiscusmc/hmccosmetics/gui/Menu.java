@@ -12,6 +12,7 @@ import com.hibiscusmc.hmccosmetics.gui.type.Type;
 import com.hibiscusmc.hmccosmetics.gui.type.Types;
 import com.hibiscusmc.hmccosmetics.gui.type.types.TypeCosmetic;
 import com.hibiscusmc.hmccosmetics.user.CosmeticUser;
+import com.hibiscusmc.hmccosmetics.user.manager.UserWardrobeManager;
 import com.hibiscusmc.hmccosmetics.util.HMCCInventoryUtils;
 import com.hibiscusmc.hmccosmetics.util.MessagesUtil;
 import dev.triumphteam.gui.builder.item.ItemBuilder;
@@ -243,6 +244,12 @@ public class Menu {
                 Bukkit.getPluginManager().callEvent(event);
                 if (!event.isCancelled()) {
                     openGuiTask.run();
+                    UserWardrobeManager wardrobe = user.getWardrobeManager();
+                    if (wardrobe != null && wardrobe.getWardrobeStatus() == UserWardrobeManager.WardrobeStatus.RUNNING
+                            && viewer.getUniqueId().equals(user.getUniqueId())
+                            && viewer.getOpenInventory().getTopInventory().equals(gui.getInventory())) {
+                        wardrobe.setLastOpenMenu(this);
+                    }
                 }
             });
         }

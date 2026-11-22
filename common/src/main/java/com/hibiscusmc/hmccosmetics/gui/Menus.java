@@ -56,7 +56,8 @@ public class Menus {
 
     @Nullable
     public static Menu getDefaultMenu() {
-        return Menus.getMenu(Settings.getDefaultMenu());
+        String defaultMenu = Settings.getDefaultMenu();
+        return defaultMenu == null ? null : getMenu(defaultMenu);
     }
 
     @NotNull

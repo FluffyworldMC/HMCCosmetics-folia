@@ -9,6 +9,7 @@ paper-api = { module = "io.papermc.paper:paper-api", version.ref = "paper" }
 annotations = { module = "org.jetbrains:annotations", version = "24.1.0" }
 lombok = { module = "org.projectlombok:lombok", version.ref = "lombok" }
 commons-io = { module = "commons-io:commons-io", version = "2.17.0" } # The version Minecraft 1.21.4 ships
+netty-transport = { module = "io.netty:netty-transport", version = "4.1.118.Final" }
 
 hibiscuscommons = { module = "me.lojosho:HibiscusCommons", version = "0.9.3" }
 triumph-gui = { module = "dev.triumphteam:triumph-gui", version = "3.2.0-SNAPSHOT" }

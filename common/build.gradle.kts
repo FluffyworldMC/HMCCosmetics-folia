@@ -13,6 +13,7 @@ dependencies {
     compileOnly(libs.paper.api)
     compileOnly(libs.annotations)
     compileOnly(libs.commons.io) // Shipped by the server, not by us
+    compileOnly(libs.netty.transport)
     compileOnly(libs.hibiscuscommons)
     compileOnly(libs.placeholderapi)
     compileOnly(libs.modelengine)

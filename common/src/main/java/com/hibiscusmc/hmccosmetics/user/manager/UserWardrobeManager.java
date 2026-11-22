@@ -9,6 +9,7 @@ import com.hibiscusmc.hmccosmetics.cosmetic.CosmeticSlot;
 import com.hibiscusmc.hmccosmetics.cosmetic.types.CosmeticBalloonType;
 import com.hibiscusmc.hmccosmetics.gui.Menu;
 import com.hibiscusmc.hmccosmetics.gui.Menus;
+import com.hibiscusmc.hmccosmetics.packets.WardrobeClickHandler;
 import com.hibiscusmc.hmccosmetics.user.CosmeticUser;
 import com.hibiscusmc.hmccosmetics.util.HMCCInventoryUtils;
 import com.hibiscusmc.hmccosmetics.util.HMCCServerUtils;
@@ -28,11 +29,13 @@ import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.event.player.PlayerTeleportEvent;
+import org.bukkit.inventory.CraftingInventory;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import com.github.Anon8281.universalScheduler.scheduling.tasks.MyScheduledTask;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 
@@ -42,6 +45,9 @@ public class UserWardrobeManager {
     private final int NPC_ID;
     @Getter
     private final int ARMORSTAND_ID;
+    private final int backpackPreviewId;
+    private ItemStack backpackPreviewItem;
+    private double mannequinScale = 1.0;
     @Getter
     private final UUID WARDROBE_UUID;
     @Getter
@@ -65,9 +71,11 @@ public class UserWardrobeManager {
     @Getter
     private boolean active;
     private MyScheduledTask wardrobeTask;
+    private Runnable removeClickHandler;
+    private final AtomicBoolean menuOpenQueued = new AtomicBoolean();
     @Setter
     @Getter
-    private WardrobeStatus wardrobeStatus;
+    private volatile WardrobeStatus wardrobeStatus;
     @Getter
     @Setter
     private Menu lastOpenMenu;
@@ -79,6 +87,7 @@ public class UserWardrobeManager {
         World world = user.getEntity().getWorld();
         NPC_ID = me.lojosho.hibiscuscommons.util.ServerUtils.getNextEntityId(world);
         ARMORSTAND_ID = me.lojosho.hibiscuscommons.util.ServerUtils.getNextEntityId(world);
+        backpackPreviewId = me.lojosho.hibiscuscommons.util.ServerUtils.getNextEntityId(world);
         WARDROBE_UUID = UUID.randomUUID();
         this.user = user;
 
@@ -90,21 +99,12 @@ public class UserWardrobeManager {
         this.npcLocation = wardrobeLocation.getNpcLocation();
 
         String defaultMenu = wardrobe.getDefaultMenu();
-        if (defaultMenu != null) {
-            // User has defined a custom menu in the wardrobe config
-            Menu menu = Menus.getMenu(defaultMenu);
-            if (menu != null) {
-                // User provided a good, valid menu
-                this.lastOpenMenu = Menus.getMenu(defaultMenu);
-            } else {
-                // User provided a menu that does not exist in HMCC
-                this.lastOpenMenu = Menus.getDefaultMenu();
-                MessagesUtil.sendDebugMessages("Unable to set menu (" + defaultMenu + ") in wardrobe " + getWardrobe().getId() + ". Defaulting to default menu defined in config.yml", Level.WARNING);
-                if (this.lastOpenMenu == null) {
-                    // That means that even the default menu is null in the config.
-                    MessagesUtil.sendDebugMessages("Unable to set any menu in wardrobe " + getWardrobe().getId() + " as the fallback default menu (defined in config.yml) is invalid.", Level.WARNING);
-                }
+        lastOpenMenu = defaultMenu == null ? null : Menus.getMenu(defaultMenu);
+        if (lastOpenMenu == null) {
+            if (defaultMenu != null) {
+                MessagesUtil.sendDebugMessages("Unable to set menu (" + defaultMenu + ") in wardrobe " + wardrobe.getId() + ". Defaulting to the menu defined in config.yml", Level.WARNING);
             }
+            lastOpenMenu = Menus.getDefaultMenu();
         }
 
         wardrobeStatus = WardrobeStatus.SETUP;
@@ -122,8 +122,6 @@ public class UserWardrobeManager {
         user.hidePlayer();
         if (!Bukkit.getServer().getAllowFlight()) player.setAllowFlight(true);
         List<Player> viewer = Collections.singletonList(player);
-        List<Player> outsideViewers = HMCCPacketManager.getViewers(viewingLocation);
-        outsideViewers.remove(player);
 
         MessagesUtil.sendMessage(player, "opened-wardrobe");
 
@@ -133,6 +131,7 @@ public class UserWardrobeManager {
                 return;
             }
 
+            user.despawnBackpack();
             List<PacketWrapper> viewerPackets = new ArrayList<>();
 
             // Armorstand
@@ -160,25 +159,15 @@ public class UserWardrobeManager {
             viewerPackets.add(packetBuilder.buildPlayerScoreboardAddPlayersPacket(player, npcName));
             AttributeInstance scaleAttribute = user.getPlayer().getAttribute(Attribute.SCALE);
             if (scaleAttribute != null) {
-                viewerPackets.add(packetBuilder.buildEntityAttributePacket(NPC_ID, Attribute.SCALE, scaleAttribute.getValue()));
+                mannequinScale = scaleAttribute.getValue();
+                viewerPackets.add(packetBuilder.buildEntityAttributePacket(NPC_ID, Attribute.SCALE, mannequinScale));
             }
 
             // Location
             viewerPackets.add(packetBuilder.buildEntityRotateHeadPacket(NPC_ID, npcLocation));
             viewerPackets.add(packetBuilder.buildEntityRotatePacket(NPC_ID, npcLocation, true));
 
-            // Misc
-            if (user.hasCosmeticInSlot(CosmeticSlot.BACKPACK)) {
-                // Maybe null as backpack maybe despawned before entering
-                if (user.getUserBackpackManager() == null) user.respawnBackpack();
-                if (user.isBackpackSpawned()) {
-                    user.getUserBackpackManager().getEntityManager().teleport(npcLocation.clone().add(0, 2, 0));
-
-                    viewerPackets.add(packetBuilder.buildEntityEquipmentSlotUpdatePacket(user.getUserBackpackManager().getFirstArmorStandId(), Map.of(EquipmentSlot.HEAD, user.getUserCosmeticItem(user.getCosmetic(CosmeticSlot.BACKPACK)))));
-                    viewerPackets.add(packetBuilder.buildEntityMountPacket(NPC_ID, new int[]{user.getUserBackpackManager().getFirstArmorStandId()}));
-                }
-            }
-
+            removeClickHandler = WardrobeClickHandler.register(player, () -> requestMenuOpen(player));
             packetSender.sendBundle(viewerPackets, viewer);
 
             if (user.hasCosmeticInSlot(CosmeticSlot.BALLOON)) {
@@ -205,14 +194,10 @@ public class UserWardrobeManager {
                 player.showBossBar(bossBar);
             }
 
-            if (WardrobeSettings.isEnterOpenMenu()) {
-                Menu menu = Menus.getDefaultMenu();
-                if (menu != null) menu.openMenu(user);
-            }
-
             this.active = true;
             update();
             setWardrobeStatus(WardrobeStatus.RUNNING);
+            if (WardrobeSettings.isEnterOpenMenu() && lastOpenMenu != null) lastOpenMenu.openMenu(user);
         };
 
 
@@ -237,18 +222,19 @@ public class UserWardrobeManager {
     }
 
     public void end() {
+        setWardrobeStatus(WardrobeStatus.STOPPING);
+        if (removeClickHandler != null) {
+            removeClickHandler.run();
+            removeClickHandler = null;
+        }
         if (wardrobeTask != null) {
             wardrobeTask.cancel();
             wardrobeTask = null;
         }
-        setWardrobeStatus(WardrobeStatus.STOPPING);
         Player player = user.getPlayer();
 
-        List<Player> viewer = Collections.singletonList(player);
-        List<Player> outsideViewers = HMCCPacketManager.getViewers(viewingLocation);
-        outsideViewers.remove(player);
-
         if (player == null) return;
+        List<Player> viewer = Collections.singletonList(player);
         if (!Bukkit.getServer().getAllowFlight()) player.setAllowFlight(false);
         MessagesUtil.sendMessage(player, "closed-wardrobe");
 
@@ -265,6 +251,7 @@ public class UserWardrobeManager {
             }
 
             // NPC
+            removeBackpackPreview(viewer);
             if (user.isBalloonSpawned()) user.getBalloonManager().sendRemoveLeashPacket();
             HMCCPacketManager.sendEntityDestroyPacket(NPC_ID, viewer); // Success
             HMCCPacketManager.sendRemovePlayerPacket(player, WARDROBE_UUID, viewer); // Success
@@ -322,6 +309,71 @@ public class UserWardrobeManager {
         run.run();
     }
 
+    public boolean requestMenuOpen(Player player) {
+        if (wardrobeStatus != WardrobeStatus.RUNNING) return false;
+        if (menuOpenQueued.compareAndSet(false, true)) {
+            HMCCServerUtils.runOnEntityLater(player, () -> {
+                menuOpenQueued.set(false);
+                if (wardrobeStatus != WardrobeStatus.RUNNING || !player.isOnline() || user.getWardrobeManager() != this) return;
+                // The player's default container has four crafting slots and one result slot.
+                if (!(player.getOpenInventory().getTopInventory() instanceof CraftingInventory crafting)
+                        || crafting.getSize() != 5) return;
+                if (lastOpenMenu != null) lastOpenMenu.openMenu(user);
+            }, 1);
+        }
+        return true;
+    }
+
+    void updateBackpackPreview(Player player, Location location) {
+        // A world transfer clears client-only entities. Wait for the player to reach the wardrobe.
+        if (!player.getWorld().equals(viewingLocation.getWorld())) {
+            backpackPreviewItem = null;
+            return;
+        }
+
+        List<Player> viewer = List.of(player);
+        Cosmetic backpack = user.getCosmetic(CosmeticSlot.BACKPACK);
+        if (backpack == null || user.isHidden()) {
+            removeBackpackPreview(viewer);
+            return;
+        }
+
+        ItemStack item = user.getUserCosmeticItem(backpack);
+        if (item.isEmpty()) {
+            removeBackpackPreview(viewer);
+            return;
+        }
+
+        List<PacketWrapper> packets = new ArrayList<>();
+        // The mannequin needs its own stand. The normal backpack can be cleared by teleports
+        // or attached to the player's first-person passenger chain.
+        boolean needsSpawn = backpackPreviewItem == null;
+        boolean itemChanged = !item.equals(backpackPreviewItem);
+        if (needsSpawn) {
+            packets.addAll(HMCCPacketManager.getInvisibleArmorStand(backpackPreviewId, location, UUID.randomUUID()));
+            if (mannequinScale != 1.0) {
+                packets.add(packetBuilder.buildEntityAttributePacket(backpackPreviewId, Attribute.SCALE, mannequinScale));
+            }
+        }
+        if (itemChanged) {
+            packets.add(packetBuilder.buildEntityEquipmentSlotUpdatePacket(backpackPreviewId, Map.of(EquipmentSlot.HEAD, item)));
+        }
+        if (needsSpawn) {
+            packets.add(packetBuilder.buildEntityMountPacket(NPC_ID, new int[]{backpackPreviewId}));
+        }
+        packets.add(packetBuilder.buildEntityRotatePacket(backpackPreviewId, location, false));
+        packets.add(packetBuilder.buildEntityRotateHeadPacket(backpackPreviewId, location));
+        packetSender.sendBundle(packets, viewer);
+
+        if (itemChanged) backpackPreviewItem = item.clone();
+    }
+
+    private void removeBackpackPreview(List<Player> viewer) {
+        if (backpackPreviewItem == null) return;
+        HMCCPacketManager.sendEntityDestroyPacket(backpackPreviewId, viewer);
+        backpackPreviewItem = null;
+    }
+
     private void update() {
         final AtomicInteger data = new AtomicInteger();
         Player playerEntity = user.getPlayer();
@@ -359,12 +411,7 @@ public class UserWardrobeManager {
                     HMCCPacketManager.equipmentSlotUpdate(NPC_ID, user, slot, viewer);
                 }
 
-                if (user.hasCosmeticInSlot(CosmeticSlot.BACKPACK) && user.getUserBackpackManager() != null) {
-                    HMCCPacketManager.sendTeleportPacket(user.getUserBackpackManager().getFirstArmorStandId(), location, false, viewer);
-                    packetBuilder.buildEntityMountPacket(NPC_ID, new int[]{user.getUserBackpackManager().getFirstArmorStandId()}).sendPacket(viewer);
-                    user.getUserBackpackManager().getEntityManager().setRotation(nextyaw);
-                    HMCCPacketManager.sendEntityDestroyPacket(user.getUserBackpackManager().getFirstArmorStandId(), outsideViewers);
-                }
+                updateBackpackPreview(player, location);
 
                 if (user.hasCosmeticInSlot(CosmeticSlot.BALLOON) && user.isBalloonSpawned()) {
                     // The two lines below broke, solved by listening to PlayerCosmeticPostEquipEvent

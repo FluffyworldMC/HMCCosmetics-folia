@@ -615,6 +615,7 @@ public class CosmeticUser implements CosmeticHolder {
     }
 
     public void spawnBackpack(CosmeticBackpackType cosmeticBackpackType) {
+        if (userWardrobeManager != null && userWardrobeManager.getWardrobeStatus() != UserWardrobeManager.WardrobeStatus.STOPPING) return;
         if (this.userBackpackManager != null || getEntity() == null) return;
         this.userBackpackManager = new UserBackpackManager(this);
         userBackpackManager.spawnBackpack(cosmeticBackpackType);
@@ -811,9 +812,7 @@ public class CosmeticUser implements CosmeticHolder {
         }
         if (hasCosmeticInSlot(CosmeticSlot.BACKPACK)) {
             if (!isBackpackSpawned()) respawnBackpack();
-            CosmeticBackpackType cosmeticBackpackType = (CosmeticBackpackType) getCosmetic(CosmeticSlot.BACKPACK);
-            ItemStack item = getUserCosmeticItem(cosmeticBackpackType);
-            userBackpackManager.setItem(item);
+            if (isBackpackSpawned()) userBackpackManager.setItem(getUserCosmeticItem(CosmeticSlot.BACKPACK));
         }
         updateCosmetic();
         MessagesUtil.sendDebugMessages("ShowCosmetics");

@@ -6,7 +6,6 @@ import com.hibiscusmc.hmccosmetics.cosmetic.Cosmetic;
 import com.hibiscusmc.hmccosmetics.cosmetic.CosmeticSlot;
 import com.hibiscusmc.hmccosmetics.cosmetic.types.CosmeticArmorType;
 import com.hibiscusmc.hmccosmetics.cosmetic.types.CosmeticBackpackType;
-import com.hibiscusmc.hmccosmetics.gui.Menu;
 import com.hibiscusmc.hmccosmetics.user.CosmeticUser;
 import com.hibiscusmc.hmccosmetics.user.CosmeticUsers;
 import com.hibiscusmc.hmccosmetics.user.manager.UserBackpackManager;
@@ -211,13 +210,7 @@ public class CosmeticPacketInterface implements PacketInterface {
 
     @Override
     public @NotNull PacketAction readPlayerArm(@NotNull Player player, @NotNull PlayerSwingWrapper wrapper) {
-        CosmeticUser user = CosmeticUsers.getUser(player);
-        if (user == null || !user.isInWardrobe() || !user.getWardrobeManager().getWardrobeStatus().equals(UserWardrobeManager.WardrobeStatus.RUNNING)) return PacketAction.NOTHING;
-
-        Menu menu = user.getWardrobeManager().getLastOpenMenu();
-        if (menu == null) return PacketAction.NOTHING;
-        menu.openMenu(user);
-        return PacketAction.CANCELLED;
+        return requestWardrobeMenu(player) ? PacketAction.CANCELLED : PacketAction.NOTHING;
     }
 
     @Override
@@ -229,16 +222,13 @@ public class CosmeticPacketInterface implements PacketInterface {
 
     @Override
     public @NotNull PacketAction readPlayerInput(@NotNull Player player, @NotNull PlayerInputWrapper wrapper) {
-        // Spectator clients (used by the wardrobe) never send a swing packet on left-click,
-        // so the menu is reopened via the jump key instead.
-        if (!wrapper.jump()) return PacketAction.NOTHING;
-
-        CosmeticUser user = CosmeticUsers.getUser(player);
-        if (user == null || !user.isInWardrobe() || !user.getWardrobeManager().getWardrobeStatus().equals(UserWardrobeManager.WardrobeStatus.RUNNING)) return PacketAction.NOTHING;
-
-        Menu menu = user.getWardrobeManager().getLastOpenMenu();
-        if (menu == null) return PacketAction.NOTHING;
-        menu.openMenu(user);
+        if (wrapper.jump()) requestWardrobeMenu(player);
         return PacketAction.NOTHING;
+    }
+
+    private boolean requestWardrobeMenu(Player player) {
+        CosmeticUser user = CosmeticUsers.getUser(player);
+        UserWardrobeManager wardrobe = user == null ? null : user.getWardrobeManager();
+        return wardrobe != null && wardrobe.requestMenuOpen(player);
     }
 }
