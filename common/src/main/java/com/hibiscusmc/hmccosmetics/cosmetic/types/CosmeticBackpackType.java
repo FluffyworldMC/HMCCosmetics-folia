@@ -65,9 +65,9 @@ public class CosmeticBackpackType extends Cosmetic implements CosmeticUpdateBeha
         int firstArmorStandId = backpackManager.getFirstArmorStandId();
 
         List<Player> newViewers = new ArrayList<>(entityManager.refreshViewers(loc));
-        // The owner already has a separate first-person model and cloud mount chain.
-        // A third-person spawn would replace its equipment and mount on the client.
-        if (isFirstPersonCompadible()) newViewers.remove(user.getPlayer());
+        Player owner = user.getPlayer();
+        boolean hasFirstPersonModel = isFirstPersonCompadible() && owner != null;
+        if (hasFirstPersonModel) newViewers.remove(owner);
         NMSPacketBuilder packetBuilder = NMSHandlers.getHandler().getPacketBuilder();
 
         final ArrayList<PacketWrapper> newViewerBundle = new ArrayList<>();
@@ -88,43 +88,32 @@ public class CosmeticBackpackType extends Cosmetic implements CosmeticUpdateBeha
                      */
                 }
             }
+            // Clients can only mount the stand after its spawn packet has arrived.
+            backpackManager.addMountPackets(newViewerBundle, packetBuilder, entity, false);
+            NMSHandlers.getHandler().getPacketSender().sendBundle(newViewerBundle, newViewers);
         }
-
-        // If true, it will send the riding packet to all players. If false, it will send the riding packet only to new players
-        int[] existingPassengers = entity.getPassengers().stream()
-                .mapToInt(Entity::getEntityId)
-                .toArray();
-        boolean hasExistingPassengers = existingPassengers.length > 0;
 
         if (Settings.isBackpackForceRidingEnabled()) {
-            HMCCPacketManager.sendRidingPacket(entity.getEntityId(), firstArmorStandId, entityManager.getViewers());
-            if (hasExistingPassengers) HMCCPacketManager.sendRidingPacket(firstArmorStandId, existingPassengers, entityManager.getViewers());
-        } else {
-            newViewerBundle.add(packetBuilder.buildEntityMountPacket(entity.getEntityId(), new int[]{firstArmorStandId}));
-            if (hasExistingPassengers) newViewerBundle.add(packetBuilder.buildEntityMountPacket(firstArmorStandId, existingPassengers));
+            List<Player> existingViewers = new ArrayList<>(entityManager.getViewers());
+            existingViewers.removeAll(newViewers);
+            if (hasFirstPersonModel) existingViewers.remove(owner);
+            if (!existingViewers.isEmpty()) {
+                List<PacketWrapper> mountPackets = new ArrayList<>();
+                backpackManager.addMountPackets(mountPackets, packetBuilder, entity, false);
+                NMSHandlers.getHandler().getPacketSender().sendBundle(mountPackets, existingViewers);
+            }
         }
 
-        if (isFirstPersonCompadible() && !user.isInWardrobe() && user.getPlayer() != null) {
+        if (hasFirstPersonModel) {
             final ArrayList<PacketWrapper> ownerBundle = new ArrayList<>();
-
-            ArrayList<Integer> particleCloud = backpackManager.getAreaEffectEntityId();
-            for (int i = 0; i < particleCloud.size(); i++) {
-                if (i == 0) {
-                    ownerBundle.add(packetBuilder.buildEntityMountPacket(entity.getEntityId(), new int[]{particleCloud.get(i)}));
-                } else {
-                    ownerBundle.add(packetBuilder.buildEntityMountPacket(particleCloud.get(i - 1), new int[]{particleCloud.get(i)}));
-                }
-            }
-            ownerBundle.add(packetBuilder.buildEntityMountPacket(particleCloud.getLast(), new int[]{firstArmorStandId}));
-            if (hasExistingPassengers) ownerBundle.add(packetBuilder.buildEntityMountPacket(firstArmorStandId, existingPassengers));
+            backpackManager.addMountPackets(ownerBundle, packetBuilder, entity, true);
             if (!user.isHidden()) {
                 ownerBundle.add(packetBuilder.buildEntityEquipmentSlotUpdatePacket(firstArmorStandId, Map.of(EquipmentSlot.HEAD, user.getUserCosmeticItem(this, firstPersonBackpack))));
             }
 
-            NMSHandlers.getHandler().getPacketSender().sendBundle(ownerBundle, user.getPlayer());
+            NMSHandlers.getHandler().getPacketSender().sendBundle(ownerBundle, owner);
         }
 
-        NMSHandlers.getHandler().getPacketSender().sendBundle(newViewerBundle, newViewers);
         backpackManager.showBackpack();
     }
 

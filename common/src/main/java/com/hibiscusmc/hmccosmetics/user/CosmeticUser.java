@@ -666,17 +666,11 @@ public class CosmeticUser implements CosmeticHolder {
     }
 
     /**
-     * Re-sends the backpack spawn packets without recreating the manager. The backpack is a
-     * packet-only entity, so its packets can be lost while the client is switching worlds.
+     * Rebuilds the packet-only backpack and its passenger chain after the client switches worlds.
      */
     public void refreshBackpackPackets() {
         if (getEntity() == null || isHidden() || isInWardrobe() || isHidingBackpackPose()) return;
-        if (!hasCosmeticInSlot(CosmeticSlot.BACKPACK)) return;
-        if (userBackpackManager == null) {
-            respawnBackpack();
-            return;
-        }
-        userBackpackManager.spawnBackpack((CosmeticBackpackType) getCosmetic(CosmeticSlot.BACKPACK));
+        respawnBackpack();
     }
 
     public void respawnBalloon() {

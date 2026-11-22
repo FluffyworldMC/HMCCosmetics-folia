@@ -86,20 +86,12 @@ public class UserBackpackManager {
 
         Entity entity = user.getEntity();
 
-        int[] passengerIDs = new int[entity.getPassengers().size() + 1];
-
-        for (int i = 0; i < entity.getPassengers().size(); i++) {
-            passengerIDs[i] = entity.getPassengers().get(i).getEntityId();
-        }
-
-        passengerIDs[passengerIDs.length - 1] = this.getFirstArmorStandId();
-
-        if (cosmeticBackpackType.isFirstPersonCompadible()) {
+        if (cosmeticBackpackType.isFirstPersonCompadible() && user.getPlayer() != null) {
             // The owner needs the armor stand before any equipment or mount packets, and must
             // not receive the third-person mount afterwards (it replaces the cloud chain).
             outsideViewers.remove(user.getPlayer());
             ownerBundle.addAll(outsideBundle);
-            for (int i = particleCloud.size(); i < cosmeticBackpackType.getHeight(); i++) {
+            for (int i = particleCloud.size(); i < Math.max(1, cosmeticBackpackType.getHeight()); i++) {
                 int entityId = ServerUtils.getNextEntityId(location.getWorld());
                 //if (scaleValue != 1) ownerBundle.add(packetBuilder.buildEntityAttributePacket(entityId, Attribute.SCALE, scaleValue)); // Todo: figure out how to impl scaling, area clouds can not scale and will kick the player if sent
                 this.particleCloud.add(entityId);
@@ -109,21 +101,33 @@ public class UserBackpackManager {
             for (int entityId : particleCloud) {
                 ownerBundle.addAll(HMCCPacketManager.getCloudHandleEffect(entityId, location, UUID.randomUUID()));
             }
-            // Copied code from updating the backpack
-            for (int i = 0; i < particleCloud.size(); i++) {
-                if (i == 0) ownerBundle.add(packetBuilder.buildEntityMountPacket(entity.getEntityId(), new int[]{particleCloud.get(i)}));
-                else ownerBundle.add(packetBuilder.buildEntityMountPacket(particleCloud.get(i - 1), new int[]{particleCloud.get(i)}));
-            }
-            ownerBundle.add(packetBuilder.buildEntityMountPacket(particleCloud.getLast(), new int[]{getFirstArmorStandId()}));
             if (!user.isHidden()) ownerBundle.add(packetBuilder.buildEntityEquipmentSlotUpdatePacket(getFirstArmorStandId(), Map.of(EquipmentSlot.HEAD, user.getUserCosmeticItem(cosmeticBackpackType, cosmeticBackpackType.getFirstPersonBackpack()))));
+            addMountPackets(ownerBundle, packetBuilder, entity, true);
         }
         outsideBundle.add(packetBuilder.buildEntityEquipmentSlotUpdatePacket(getFirstArmorStandId(), Map.of(EquipmentSlot.HEAD, user.getUserCosmeticItem(cosmeticBackpackType))));
-        outsideBundle.add(packetBuilder.buildEntityMountPacket(entity.getEntityId(), passengerIDs));
+        addMountPackets(outsideBundle, packetBuilder, entity, false);
 
-        NMSHandlers.getHandler().getPacketSender().sendBundle(ownerBundle, user.getPlayer());
+        if (!ownerBundle.isEmpty()) NMSHandlers.getHandler().getPacketSender().sendBundle(ownerBundle, user.getPlayer());
         NMSHandlers.getHandler().getPacketSender().sendBundle(outsideBundle, outsideViewers);
 
         MessagesUtil.sendDebugMessages("spawnBackpack Bukkit - Finish");
+    }
+
+    public void addMountPackets(List<PacketWrapper> packets, NMSPacketBuilder packetBuilder, Entity rider, boolean firstPerson) {
+        List<Entity> realPassengers = rider.getPassengers();
+        int[] passengers = new int[realPassengers.size() + 1];
+        for (int i = 0; i < realPassengers.size(); i++) {
+            passengers[i] = realPassengers.get(i).getEntityId();
+        }
+        passengers[realPassengers.size()] = firstPerson ? particleCloud.getFirst() : invisibleArmorStand;
+
+        if (firstPerson) {
+            for (int i = 1; i < particleCloud.size(); i++) {
+                packets.add(packetBuilder.buildEntityMountPacket(particleCloud.get(i - 1), new int[]{particleCloud.get(i)}));
+            }
+            packets.add(packetBuilder.buildEntityMountPacket(particleCloud.getLast(), new int[]{invisibleArmorStand}));
+        }
+        packets.add(packetBuilder.buildEntityMountPacket(rider.getEntityId(), passengers));
     }
 
     public void despawnBackpack() {
