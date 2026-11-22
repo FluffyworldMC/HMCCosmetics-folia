@@ -1,5 +1,6 @@
 package com.hibiscusmc.hmccosmetics.command;
 
+import com.github.Anon8281.universalScheduler.UniversalScheduler;
 import com.hibiscusmc.hmccolor.HMCColorConfig;
 import com.hibiscusmc.hmccolor.HMCColorContextKt;
 import com.hibiscusmc.hmccosmetics.HMCCosmeticsPlugin;
@@ -239,10 +240,20 @@ public class CosmeticCommand implements CommandExecutor {
                 if (user == null) return true;
 
                 boolean forced = sender != target;
-                if (user.isInWardrobe()) {
-                    user.leaveWardrobe(false);
+                Runnable toggleWardrobe = () -> {
+                    if (!target.isOnline() || CosmeticUsers.getUser(target) != user) return;
+                    if (user.isInWardrobe()) {
+                        user.leaveWardrobe(false);
+                    } else {
+                        user.enterWardrobe(wardrobe, forced, forced);
+                    }
+                };
+
+                // NPC plugins and console commands can dispatch from the global region.
+                if ((UniversalScheduler.isFolia || UniversalScheduler.isCanvas) && !Bukkit.isOwnedByCurrentRegion(target)) {
+                    HMCCServerUtils.runOnEntityLater(target, toggleWardrobe, 0);
                 } else {
-                    user.enterWardrobe(wardrobe, forced, forced);
+                    toggleWardrobe.run();
                 }
                 return true;
             }
